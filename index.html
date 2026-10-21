@@ -267,6 +267,9 @@
 
       const isOdd = (currentCount % 2 === 1);
       const isArrive = !isOdd; // 짝수면 도착
+      
+      // 🏃 [출발 + 도착 = 1회 완주] 회차(Round) 계산
+      const activityRound = Math.ceil(currentCount / 2);
 
       // 육성 안내: 홀수(출발) -> "출발!", 짝수(도착) -> "도착!"
       if (isArrive) {
@@ -282,12 +285,12 @@
       const timeDisplay = document.getElementById('time-display');
       const subDisplay = document.getElementById('sub-display');
 
-      bibDisplay.innerText = `배번: ${qrText} (${currentCount}회차)`;
+      bibDisplay.innerText = `배번: ${qrText} (${activityRound}회차)`;
       timeDisplay.innerText = timeStr;
 
       if (isArrive) {
-        // 짝수 번째: 도착
-        badge.innerText = `✅ ${currentCount}회차 도착 완료`;
+        // 짝수 번째: 해당 회차 도착 완료
+        badge.innerText = `✅ ${activityRound}회차 도착 완료`;
         badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500 text-white';
         subDisplay.innerText = '기록 저장 완료!';
         box.className = 'bg-emerald-950/80 border border-emerald-500 rounded-2xl p-4 transition-all duration-200';
@@ -298,16 +301,16 @@
           targetLog.arriveTime = timeStr;
           targetLog.duration = calcDurationLocal(targetLog.departTime, timeStr);
         } else {
-          logs.unshift({ bib: qrText, count: currentCount, departTime: '-', arriveTime: timeStr, duration: '' });
+          logs.unshift({ bib: qrText, round: activityRound, departTime: '-', arriveTime: timeStr, duration: '' });
         }
       } else {
-        // 홀수 번째: 출발
-        badge.innerText = `🏃 ${currentCount}회차 출발 완료`;
+        // 홀수 번째: 해당 회차 출발
+        badge.innerText = `🏃 ${activityRound}회차 출발 완료`;
         badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500 text-white';
         subDisplay.innerText = '안전하게 다녀오세요!';
         box.className = 'bg-blue-950/80 border border-blue-500 rounded-2xl p-4 transition-all duration-200';
 
-        logs.unshift({ bib: qrText, count: currentCount, departTime: timeStr, arriveTime: '', duration: '' });
+        logs.unshift({ bib: qrText, round: activityRound, departTime: timeStr, arriveTime: '', duration: '' });
       }
 
       // 구글 스프레드시트로 전송
@@ -357,7 +360,7 @@
 
       container.innerHTML = logs.map(l => `
         <div class="py-1.5 flex items-center justify-between">
-          <span class="font-bold text-slate-200">배번: ${l.bib}</span>
+          <span class="font-bold text-slate-200">배번: ${l.bib} <span class="text-[10px] text-slate-400 font-normal">(${l.round}회차)</span></span>
           <div class="space-x-1 text-[10px]">
             <span class="px-1.5 py-0.5 rounded bg-blue-950 text-blue-300">출발 ${l.departTime}</span>
             <span class="px-1.5 py-0.5 rounded ${l.arriveTime ? 'bg-emerald-950 text-emerald-300 font-bold' : 'bg-slate-800 text-slate-500'}">

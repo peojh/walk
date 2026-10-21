@@ -62,11 +62,15 @@
           📷
         </div>
         <h2 class="font-bold text-base mb-1">상시 QR 리더기 시작</h2>
-        <p class="text-xs text-slate-400 mb-5 leading-relaxed">
+        <p class="text-xs text-slate-400 mb-3 leading-relaxed">
           <b>1대의 폰으로 출발/도착 모두 찍기 가능!</b><br>
           스마트폰 여러 대 교차 사용도 완벽 지원<br>
           <span class="text-emerald-400 font-semibold mt-1 inline-block">• 구글 시트와 실시간 자동 동기화</span>
         </p>
+        <div class="bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 mb-4 text-[11px] text-amber-300 text-left flex items-start gap-2">
+          <i data-lucide="volume-2" class="w-4 h-4 shrink-0 mt-0.5 text-amber-400"></i>
+          <span><b>소리 안내 필수 확인:</b> 스마트폰 측면 <b>진동/무음 스위치를 해제</b>하시고, <b>미디어 음량</b>을 올려주세요!</span>
+        </div>
         <button id="start-btn" onclick="startCamera()" class="w-full py-3.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold rounded-xl shadow-lg transition-all text-sm flex items-center justify-center gap-2">
           <span>카메라 리더기 켜기</span>
         </button>
@@ -155,6 +159,73 @@
 
     let logs = [];
 
+    // Web Audio API Context (TTS 실패 시 즉각 Fallback 사운드)
+    let audioCtx = null;
+    function initAudioContext() {
+      if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) {
+          audioCtx = new AudioContextClass();
+        }
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    // TTS 음성 엔진 강제 사전 로딩 (iOS / 안드로이드 웜업)
+    function preloadVoices() {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.getVoices();
+        // 묵음 발화로 모바일 브라우저 오디오 권한 잠금 해제
+        try {
+          const silentUtterance = new SpeechSynthesisUtterance('');
+          silentUtterance.volume = 0;
+          window.speechSynthesis.speak(silentUtterance);
+        } catch (e) {}
+      }
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    }
+
+    // 전자 차임벨 비프음 (TTS 실패 시 100% 보장 Fallback)
+    function playBeepFallback(isArrive) {
+      try {
+        initAudioContext();
+        if (!audioCtx) return;
+
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        if (isArrive) {
+          // 도착: 경쾌한 2화음 (도-솔)
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(523.25, now); // C5
+          osc.frequency.setValueAtTime(783.99, now + 0.12); // G5
+          gain.gain.setValueAtTime(0.35, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+          osc.start(now);
+          osc.stop(now + 0.35);
+        } else {
+          // 출발: 맑은 단음 핑!
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(659.25, now); // E5
+          gain.gain.setValueAtTime(0.3, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+          osc.start(now);
+          osc.stop(now + 0.22);
+        }
+      } catch (err) {
+        console.warn('Audio fallback error:', err);
+      }
+    }
+
     // 동일 브라우저/탭 간 P2P 초고속 동기화 채널
     const localChannel = ('BroadcastChannel' in window) ? new BroadcastChannel('walk_qr_sync') : null;
     if (localChannel) {
@@ -199,14 +270,22 @@
     setInterval(syncRemoteLogs, 1800);
     setTimeout(syncRemoteLogs, 500);
 
-    // 또렷하고 빠른 한국어 육성 출력
-    function speakVoice(text) {
+    // 또렷하고 빠른 사운드 출력 (TTS 음성 + 실패 시 비프음 보장)
+    function playSoundAlert(actionType) {
+      const isArrive = (actionType === 'ARRIVE');
+      const text = isArrive ? "도착" : "출발";
+      let speechWorked = false;
+
+      // 1. Web Audio Context 활성화 보장
+      initAudioContext();
+
+      // 2. TTS 음성 시도
       try {
         if ('speechSynthesis' in window) {
-          window.speechSynthesis.cancel();
+          window.speechSynthesis.cancel(); // 큐 초기화
           const utterance = new SpeechSynthesisUtterance(text);
           utterance.lang = 'ko-KR';
-          utterance.rate = 1.3;
+          utterance.rate = 1.35;
           utterance.pitch = 1.05;
           utterance.volume = 1.0;
 
@@ -214,28 +293,32 @@
           const koVoice = voices.find(v => v.lang && (v.lang.startsWith('ko') || v.lang.includes('KR')));
           if (koVoice) utterance.voice = koVoice;
 
+          // 발화 시작 확인 이벤트
+          utterance.onstart = () => { speechWorked = true; };
           window.speechSynthesis.speak(utterance);
         }
       } catch (e) {
-        console.warn("음성 오류:", e);
+        console.warn("TTS 실행 에러:", e);
       }
+
+      // 3. 기종별 TTS 지연 또는 차단 대비: Web Audio 비프음을 병행/보완 출력
+      // (TTS 음성과 조화롭게 어우러지도록 매우 짧은 0.15초 차임벨 동시 울림)
+      playBeepFallback(isArrive);
     }
 
     async function startCamera() {
       const overlay = document.getElementById('start-overlay');
       const startBtn = document.getElementById('start-btn');
       startBtn.disabled = true;
-      startBtn.innerHTML = `<span>카메라 연결 중...</span>`;
+      startBtn.innerHTML = `<span>카메라 및 사운드 연결 중...</span>`;
+
+      // 터치 시 오디오 세션 즉시 완전 잠금 해제
+      initAudioContext();
+      preloadVoices();
 
       video = document.getElementById('video-feed');
       canvas = document.getElementById('qr-canvas');
       ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-      try {
-        if ('speechSynthesis' in window) {
-          window.speechSynthesis.getVoices();
-        }
-      } catch (e) {}
 
       let stream = null;
       try {
@@ -317,17 +400,17 @@
       bibDisplay.innerText = `배번: ${qrText}`;
       timeDisplay.innerText = timeStr;
 
-      // 🚀 [핵심 1] 0.001초 만에 화면과 목록에 즉시 낙관적 반영 (지연 제로 체감)
+      // 🚀 [핵심 1] 0.001초 만에 화면과 사운드 즉시 반응
       const isLikelyArrive = logs.some(l => String(l.bib) === String(qrText) && (!l.arriveTime || l.arriveTime === '' || l.arriveTime === '-'));
       
       if (isLikelyArrive) {
-        speakVoice("도착");
+        playSoundAlert('ARRIVE');
         badge.innerText = '✅ 도착 처리 중...';
         badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-600 text-white';
         subDisplay.innerText = '기록 저장 중';
         box.className = 'bg-emerald-950/80 border border-emerald-500 rounded-2xl p-4 transition-all duration-150';
       } else {
-        speakVoice("출발");
+        playSoundAlert('DEPART');
         badge.innerText = '🏃 출발 처리 중...';
         badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-600 text-white';
         subDisplay.innerText = '출발 저장 중';
@@ -487,3 +570,4 @@
   </script>
 </body>
 </html>
+`

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>학교 걷기 상시 QR 리더기</title>
+  <title>학교 걷기 다목적 QR 리더기</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- 고성능 모바일 QR 엔진 jsQR -->
@@ -31,7 +31,7 @@
   <header class="w-full max-w-sm flex items-center justify-between py-2 border-b border-slate-800">
     <div class="flex items-center gap-2">
       <span id="live-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-      <h1 class="text-sm font-bold tracking-tight">학교 걷기 다중 QR 리더기</h1>
+      <h1 class="text-sm font-bold tracking-tight">학교 걷기 QR 리더기</h1>
     </div>
     <div class="flex items-center gap-2">
       <div id="live-clock" class="text-xs font-mono text-slate-300 font-bold">00:00:00</div>
@@ -53,19 +53,19 @@
       <div class="absolute inset-0 border-2 border-dashed border-emerald-400/50 m-7 rounded-2xl pointer-events-none flex flex-col items-center justify-between p-3">
         <span class="text-[11px] bg-black/75 px-2 py-0.5 rounded text-emerald-300 font-semibold">학생 QR을 화면에 비춰주세요</span>
         <div class="w-full h-0.5 bg-emerald-400 shadow-[0_0_10px_#34d399] animate-pulse"></div>
-        <span class="text-[10px] text-slate-400 font-mono">1~4번 기기 교차 스캔 완벽 지원</span>
+        <span class="text-[10px] text-slate-400 font-mono">1대 단독 & 다중 기기 완벽 지원</span>
       </div>
 
-      <!-- 최초 1회 시작 버튼 -->
+      <!-- 최초 1회 시작 버튼 오버레이 -->
       <div id="start-overlay" class="absolute z-20 inset-0 bg-slate-900/95 flex flex-col items-center justify-center p-6 text-center">
         <div class="w-16 h-16 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center text-3xl mb-3">
           📷
         </div>
-        <h2 class="font-bold text-base mb-1">상시 리더기 시작</h2>
+        <h2 class="font-bold text-base mb-1">상시 QR 리더기 시작</h2>
         <p class="text-xs text-slate-400 mb-5 leading-relaxed">
-          스마트폰 여러 대를 동시에 켜두고<br>
-          <b>어느 기기에서 출발/도착을 찍어도</b><br>
-          <span class="text-emerald-400 font-semibold mt-1 inline-block">• 구글 시트와 0.1초 실시간 동기화</span>
+          <b>1대의 폰으로 출발/도착 모두 찍기 가능!</b><br>
+          스마트폰 여러 대 교차 사용도 완벽 지원<br>
+          <span class="text-emerald-400 font-semibold mt-1 inline-block">• 구글 시트와 실시간 자동 동기화</span>
         </p>
         <button id="start-btn" onclick="startCamera()" class="w-full py-3.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold rounded-xl shadow-lg transition-all text-sm flex items-center justify-center gap-2">
           <span>카메라 리더기 켜기</span>
@@ -73,7 +73,7 @@
       </div>
 
     </div>
-    <p class="text-center text-[11px] text-slate-400 mt-2">1번 폰(출발) ➡️ 2~4번 폰(도착) 즉시 연동</p>
+    <p class="text-center text-[11px] text-slate-400 mt-2">1대 단독(출발 ➡️ 도착) 및 여러 대 교차 완벽 호환</p>
   </main>
 
   <!-- 결과 즉시 피드백 카드 -->
@@ -147,7 +147,7 @@
     let isScanning = false;
     let lastCode = '';
     let lastScanTime = 0;
-    const SCAN_COOL_TIME = 2000; // 동일 QR 중복 스캔 방지 (2초)
+    const SCAN_COOL_TIME = 1500; // 연속 동일 스캔 쿨타임 (1.5초)
     let isProcessing = false;
 
     let logs = [];
@@ -165,7 +165,7 @@
           window.speechSynthesis.cancel();
           const utterance = new SpeechSynthesisUtterance(text);
           utterance.lang = 'ko-KR';
-          utterance.rate = 1.25; // 현장용 경쾌하고 빠른 템포
+          utterance.rate = 1.25;
           utterance.pitch = 1.05;
           utterance.volume = 1.0;
 
@@ -210,7 +210,7 @@
             audio: false
           });
         } catch (err2) {
-          alert('카메라 접근 권한을 브라우저 설정에서 허용해 주세요.');
+          showToast('카메라 접근 권한을 브라우저 설정에서 허용해 주세요.');
           startBtn.disabled = false;
           startBtn.innerHTML = `<span>다시 시도하기</span>`;
           return;
@@ -299,20 +299,27 @@
           bibDisplay.innerText = `배번: ${result.bib} (${round}회차)`;
 
           if (isArrive) {
-            // 🏁 시트에 미완료 행이 있어서 '도착'으로 판정!
+            // 🏁 시트에 미완료 행이 있어서 '도착'으로 판정! (1번 폰이든 다른 폰이든 무관)
             speakVoice("도착");
             badge.innerText = `✅ ${round}회차 도착 완료`;
             badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500 text-white';
             subDisplay.innerText = result.duration ? `소요: ${result.duration}` : '기록 완료!';
             box.className = 'bg-emerald-950/80 border border-emerald-500 rounded-2xl p-4 transition-all duration-150';
 
-            logs.unshift({
-              bib: result.bib,
-              round: round,
-              departTime: result.departTime || '-',
-              arriveTime: result.arriveTime || timeStr,
-              duration: result.duration || ''
-            });
+            // 로컬 목록에 반영 (이미 출발 행이 있다면 갱신, 없으면 추가)
+            const existIndex = logs.findIndex(l => l.bib === result.bib && !l.arriveTime);
+            if (existIndex !== -1) {
+              logs[existIndex].arriveTime = result.arriveTime || timeStr;
+              logs[existIndex].duration = result.duration || '';
+            } else {
+              logs.unshift({
+                bib: result.bib,
+                round: round,
+                departTime: result.departTime || '-',
+                arriveTime: result.arriveTime || timeStr,
+                duration: result.duration || ''
+              });
+            }
           } else {
             // 🏃 시트에 미완료 행이 없어서 '출발'로 판정!
             speakVoice("출발");
@@ -339,12 +346,12 @@
         speakVoice("확인");
         badge.innerText = '재스캔 필요';
         badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white';
-        subDisplay.innerText = '네트워크 지연 (다시 비춰주세요)';
+        subDisplay.innerText = '다시 비춰주세요';
       } finally {
         isProcessing = false;
         setTimeout(() => {
           box.className = 'bg-slate-900 border border-slate-800 rounded-2xl p-4 transition-all duration-150';
-        }, 1800);
+        }, 1600);
       }
     }
 
@@ -364,6 +371,14 @@
           </div>
         </div>
       `).join('');
+    }
+
+    function showToast(msg) {
+      const badge = document.getElementById('badge');
+      const subDisplay = document.getElementById('sub-display');
+      badge.innerText = '알림';
+      badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-600 text-white';
+      subDisplay.innerText = msg;
     }
 
     function openSettingsModal() {

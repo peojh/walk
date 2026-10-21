@@ -237,27 +237,24 @@
         });
 
         if (code && code.data) {
-          handleDetectedQR(code.data.trim());
-        }
-      }
-
-      requestAnimationFrame(tickScan);
-    }
+    let isProcessing = false; // 동시 통신 중복 방지 플래그
 
     async function handleDetectedQR(qrText) {
       const now = Date.now();
+      if (isProcessing) return; // 이전 통신 처리 중이면 대기
       if (qrText === lastCode && (now - lastScanTime) < SCAN_COOL_TIME) {
         return;
       }
       lastCode = qrText;
       lastScanTime = now;
+      isProcessing = true;
 
       // 스마트폰 기준 시각 및 날짜
       const dateObj = new Date();
       const dateStr = dateObj.getFullYear() + '-' + String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + String(dateObj.getDate()).padStart(2, '0');
       const timeStr = dateObj.toTimeString().split(' ')[0];
 
-      // UI 임시 표시 (통신 중)
+      // UI 임시 표시 (확인 중)
       const box = document.getElementById('notice-box');
       const badge = document.getElementById('badge');
       const bibDisplay = document.getElementById('bib-display');
@@ -266,78 +263,81 @@
 
       bibDisplay.innerText = `배번: ${qrText}`;
       timeDisplay.innerText = timeStr;
-      badge.innerText = '확인 중...';
+      badge.innerText = '동기화 중...';
       badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500 text-white animate-pulse';
-      subDisplay.innerText = '서버 동기화 중';
+      subDisplay.innerText = '시트 상태 확인 중';
 
-      // 🔗 구글 스프레드시트에 전송하여 [중앙 시트 기준 출발/도착 판정] 가져오기
-      if (gasWebAppUrl) {
-        try {
-          const response = await fetch(gasWebAppUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-              bib: qrText,
-              time: timeStr,
-              date: dateStr
-            })
-          });
-
-          const result = await response.json();
-
-          if (result && result.status === 'success') {
-            const isArrive = (result.type === 'ARRIVE');
-            const round = result.round || 1;
-
-            bibDisplay.innerText = `배번: ${result.bib} (${round}회차)`;
-
-            if (isArrive) {
-              // 🏁 도착 완료
-              speakVoice("도착");
-              badge.innerText = `✅ ${round}회차 도착 완료`;
-              badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500 text-white';
-              subDisplay.innerText = result.duration ? `소요시간: ${result.duration}` : '기록 저장 완료!';
-              box.className = 'bg-emerald-950/80 border border-emerald-500 rounded-2xl p-4 transition-all duration-200';
-
-              logs.unshift({
-                bib: result.bib,
-                round: round,
-                departTime: result.departTime || '-',
-                arriveTime: result.arriveTime || timeStr,
-                duration: result.duration || ''
-              });
-            } else {
-              // 🏃 출발 완료
-              speakVoice("출발");
-              badge.innerText = `🏃 ${round}회차 출발 완료`;
-              badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500 text-white';
-              subDisplay.innerText = '안전하게 다녀오세요!';
-              box.className = 'bg-blue-950/80 border border-blue-500 rounded-2xl p-4 transition-all duration-200';
-
-              logs.unshift({
-                bib: result.bib,
-                round: round,
-                departTime: result.departTime || timeStr,
-                arriveTime: '',
-                duration: ''
-              });
-            }
-
-            updateLogsUI();
-          }
-        } catch (e) {
-          console.error("통신 오류:", e);
-          // 통신 예외 시 기본 피드백
-          speakVoice("인식");
-          badge.innerText = '전송 완료';
-          badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-600 text-white';
-          subDisplay.innerText = '시트에 자동 전송됨';
+      try {
+        if (!gasWebAppUrl) {
+          throw new Error('시트 URL이 설정되지 않았습니다.');
         }
-      }
 
-      setTimeout(() => {
-        box.className = 'bg-slate-900 border border-slate-800 rounded-2xl p-4 transition-all duration-200';
-      }, 2000);
+        const response = await fetch(gasWebAppUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            bib: qrText,
+            time: timeStr,
+            date: dateStr
+          })
+        });
+
+        const result = await response.json();
+
+        if (result && result.status === 'success') {
+          const isArrive = (result.type === 'ARRIVE');
+          const round = result.round || 1;
+
+          bibDisplay.innerText = `배번: ${result.bib} (${round}회차)`;
+
+          if (isArrive) {
+            // 🏁 시트에 미완료 행이 있어서 '도착'으로 판정됨!
+            speakVoice("도착");
+            badge.innerText = `✅ ${round}회차 도착 완료`;
+            badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500 text-white';
+            subDisplay.innerText = result.duration ? `소요: ${result.duration}` : '기록 저장 완료!';
+            box.className = 'bg-emerald-950/80 border border-emerald-500 rounded-2xl p-4 transition-all duration-200';
+
+            logs.unshift({
+              bib: result.bib,
+              round: round,
+              departTime: result.departTime || '-',
+              arriveTime: result.arriveTime || timeStr,
+              duration: result.duration || ''
+            });
+          } else {
+            // 🏃 시트에 미완료 행이 없어서 '출발'로 판정됨!
+            speakVoice("출발");
+            badge.innerText = `🏃 ${round}회차 출발 완료`;
+            badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500 text-white';
+            subDisplay.innerText = '안전하게 다녀오세요!';
+            box.className = 'bg-blue-950/80 border border-blue-500 rounded-2xl p-4 transition-all duration-200';
+
+            logs.unshift({
+              bib: result.bib,
+              round: round,
+              departTime: result.departTime || timeStr,
+              arriveTime: '',
+              duration: ''
+            });
+          }
+
+          updateLogsUI();
+        } else {
+          throw new Error(result.message || '서버 오류');
+        }
+      } catch (e) {
+        console.error("통신 오류:", e);
+        speakVoice("확인");
+        badge.innerText = '연동 오류 재시도';
+        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white';
+        subDisplay.innerText = '네트워크를 확인하세요';
+      } finally {
+        isProcessing = false;
+        setTimeout(() => {
+          box.className = 'bg-slate-900 border border-slate-800 rounded-2xl p-4 transition-all duration-200';
+        }, 2000);
+      }
     }
 
     function updateLogsUI() {

@@ -160,25 +160,32 @@
       document.getElementById('live-clock').innerText = now.toTimeString().split(' ')[0];
     }, 1000);
 
-    // 🔄 기기간 실시간 목록 공유 (4초마다 백그라운드 동기화)
+    // 🔄 기기간 실시간 목록 공유 (3초마다 백그라운드 동기화)
     async function syncRemoteLogs() {
       if (!gasWebAppUrl || isProcessing) return;
       try {
-        const response = await fetch(gasWebAppUrl, { method: 'GET' });
-        const data = await response.json();
-        if (data && data.status === 'success' && Array.isArray(data.logs)) {
-          logs = data.logs;
-          updateLogsUI();
+        const response = await fetch(gasWebAppUrl, { 
+          method: 'GET',
+          cache: 'no-cache'
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.status === 'success' && Array.isArray(data.logs)) {
+            logs = data.logs;
+            updateLogsUI();
+            const ind = document.getElementById('sync-indicator');
+            if (ind) ind.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> 동기화됨';
+          }
         }
       } catch (e) {
-        // 백그라운드 폴링 중 에러는 조용히 무시 (화면 깜빡임 방지)
+        // 백그라운드 통신 일시 실패 시 조용히 넘김
       }
     }
 
-    // 4초마다 다른 스마트폰에서 찍은 기록 가져오기
-    setInterval(syncRemoteLogs, 4000);
-    // 페이지 로드 직후 1회 즉시 실행
-    setTimeout(syncRemoteLogs, 1000);
+    // 3초마다 다른 스마트폰에서 찍은 기록 가져오기
+    setInterval(syncRemoteLogs, 3000);
+    // 페이지 로드 직후 0.8초 후 첫 조회
+    setTimeout(syncRemoteLogs, 800);
 
     // 또렷하고 빠른 한국어 육성 출력
     function speakVoice(text) {
@@ -212,7 +219,6 @@
       canvas = document.getElementById('qr-canvas');
       ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-      // 모바일 음성 권한 언락
       try {
         if ('speechSynthesis' in window) {
           window.speechSynthesis.getVoices();
@@ -297,9 +303,12 @@
 
       bibDisplay.innerText = `배번: ${qrText}`;
       timeDisplay.innerText = timeStr;
-      badge.innerText = '인식 중...';
+      badge.innerText = '기록 중...';
       badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-600 text-white animate-pulse';
       subDisplay.innerText = '시트 동기화 중';
+
+      // ⚡ 화면 하단 목록에 즉시 임시 표시 (반응 지연 체감 0초)
+      addOptimisticLog(qrText, timeStr);
 
       try {
         const response = await fetch(gasWebAppUrl, {
@@ -321,14 +330,12 @@
           bibDisplay.innerText = `배번: ${result.bib} (${round}회차)`;
 
           if (isArrive) {
-            // 🏁 시트에 미완료 행이 있어서 '도착'으로 판정!
             speakVoice("도착");
             badge.innerText = `✅ ${round}회차 도착 완료`;
             badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500 text-white';
             subDisplay.innerText = result.duration ? `소요: ${result.duration}` : '기록 완료!';
             box.className = 'bg-emerald-950/80 border border-emerald-500 rounded-2xl p-4 transition-all duration-150';
           } else {
-            // 🏃 시트에 미완료 행이 없어서 '출발'로 판정!
             speakVoice("출발");
             badge.innerText = `🏃 ${round}회차 출발 완료`;
             badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500 text-white';
@@ -336,8 +343,8 @@
             box.className = 'bg-blue-950/80 border border-blue-500 rounded-2xl p-4 transition-all duration-150';
           }
 
-          // 📲 시트에서 반환해 준 전체 최신 목록으로 모든 기기 즉각 동기화
-          if (Array.isArray(result.logs)) {
+          // 📲 시트에서 반환해 준 정식 목록으로 즉각 갱신
+          if (Array.isArray(result.logs) && result.logs.length > 0) {
             logs = result.logs;
             updateLogsUI();
           }
@@ -358,11 +365,29 @@
       }
     }
 
+    // ⚡ 스캔 즉시 목록 최상단에 임시로 띄워주는 함수
+    function addOptimisticLog(bib, time) {
+      // 기존 미완료 행이 목록에 있는지 확인
+      const existing = logs.find(l => String(l.bib) === String(bib) && (!l.arriveTime || l.arriveTime === ''));
+      if (existing) {
+        existing.arriveTime = time;
+        existing.duration = '계산 중...';
+      } else {
+        logs.unshift({
+          bib: bib,
+          departTime: time,
+          arriveTime: '',
+          duration: ''
+        });
+      }
+      updateLogsUI();
+    }
+
     function updateLogsUI() {
       const container = document.getElementById('logs-container');
       const countEl = document.getElementById('log-count');
       if (countEl) countEl.innerText = logs.length;
-      if (logs.length === 0) {
+      if (!logs || logs.length === 0) {
         container.innerHTML = `
           <div id="empty-log" class="py-3 text-center text-slate-500 text-[11px]">
             스캔된 학생 내역이 이곳에 실시간으로 공유됩니다.
@@ -375,7 +400,7 @@
         <div class="py-1.5 flex items-center justify-between">
           <span class="font-bold text-slate-200">배번: ${l.bib}</span>
           <div class="space-x-1 text-[10px]">
-            <span class="px-1.5 py-0.5 rounded bg-blue-950 text-blue-300">출발 ${l.departTime || '-'}</span>
+            <span class="px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 font-semibold">출발 ${l.departTime || '-'}</span>
             <span class="px-1.5 py-0.5 rounded ${l.arriveTime ? 'bg-emerald-950 text-emerald-300 font-bold' : 'bg-slate-800 text-slate-500'}">
               ${l.arriveTime ? '도착 ' + l.arriveTime + (l.duration ? ' (' + l.duration + ')' : '') : '진행 중'}
             </span>

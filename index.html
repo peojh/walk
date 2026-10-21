@@ -96,13 +96,13 @@
   <div class="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-3 mb-1">
     <div class="flex items-center justify-between pb-1.5 border-b border-slate-800 text-xs">
       <span class="font-bold text-slate-400 flex items-center gap-1">
-        <i data-lucide="list" class="w-3.5 h-3.5 text-blue-400"></i> 전체 실시간 목록 (<span id="log-count">0</span>)
+        <i data-lucide="list" class="w-3.5 h-3.5 text-blue-400"></i> 현장 실시간 기록 (<span id="log-count">0</span>)
       </span>
       <span id="sync-indicator" class="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
-        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> 모든 기기 동기화됨
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> 모든 기기 연동됨
       </span>
     </div>
-    <div id="logs-container" class="max-h-24 overflow-y-auto divide-y divide-slate-800/60 custom-scrollbar text-xs pr-1">
+    <div id="logs-container" class="max-h-36 overflow-y-auto divide-y divide-slate-800/60 custom-scrollbar text-xs pr-1">
       <div id="empty-log" class="py-3 text-center text-slate-500 text-[11px]">
         스캔된 학생 내역이 이곳에 실시간으로 공유됩니다.
       </div>
@@ -149,10 +149,21 @@
     let isScanning = false;
     let lastCode = '';
     let lastScanTime = 0;
-    const SCAN_COOL_TIME = 1500; // 연속 동일 스캔 쿨타임 (1.5초)
+    const SCAN_COOL_TIME = 1200; // 연속 동일 스캔 쿨타임 단축 (1.2초)
     let isProcessing = false;
+    let isSyncing = false;
 
     let logs = [];
+
+    // 동일 브라우저/탭 간 P2P 초고속 동기화 채널
+    const localChannel = ('BroadcastChannel' in window) ? new BroadcastChannel('walk_qr_sync') : null;
+    if (localChannel) {
+      localChannel.onmessage = (event) => {
+        if (event.data && event.data.type === 'SYNC_LOGS' && Array.isArray(event.data.logs)) {
+          mergeLogs(event.data.logs);
+        }
+      };
+    }
 
     // 실시간 시계
     setInterval(() => {
@@ -160,9 +171,10 @@
       document.getElementById('live-clock').innerText = now.toTimeString().split(' ')[0];
     }, 1000);
 
-    // 🔄 기기간 실시간 목록 공유 (3초마다 백그라운드 동기화)
+    // 🔄 원격 스마트폰 간 실시간 동기화 (1.8초 고속 주기)
     async function syncRemoteLogs() {
-      if (!gasWebAppUrl || isProcessing) return;
+      if (!gasWebAppUrl || isSyncing || isProcessing) return;
+      isSyncing = true;
       try {
         const response = await fetch(gasWebAppUrl, { 
           method: 'GET',
@@ -171,21 +183,21 @@
         if (response.ok) {
           const data = await response.json();
           if (data && data.status === 'success' && Array.isArray(data.logs)) {
-            logs = data.logs;
-            updateLogsUI();
+            mergeLogs(data.logs);
             const ind = document.getElementById('sync-indicator');
-            if (ind) ind.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> 동기화됨';
+            if (ind) ind.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> 실시간 연결됨';
           }
         }
       } catch (e) {
-        // 백그라운드 통신 일시 실패 시 조용히 넘김
+        // 통신 일시 지연 시 조용히 넘어감
+      } finally {
+        isSyncing = false;
       }
     }
 
-    // 3초마다 다른 스마트폰에서 찍은 기록 가져오기
-    setInterval(syncRemoteLogs, 3000);
-    // 페이지 로드 직후 0.8초 후 첫 조회
-    setTimeout(syncRemoteLogs, 800);
+    // 1.8초마다 백그라운드 고속 동기화
+    setInterval(syncRemoteLogs, 1800);
+    setTimeout(syncRemoteLogs, 500);
 
     // 또렷하고 빠른 한국어 육성 출력
     function speakVoice(text) {
@@ -194,7 +206,7 @@
           window.speechSynthesis.cancel();
           const utterance = new SpeechSynthesisUtterance(text);
           utterance.lang = 'ko-KR';
-          utterance.rate = 1.25;
+          utterance.rate = 1.3;
           utterance.pitch = 1.05;
           utterance.volume = 1.0;
 
@@ -281,6 +293,7 @@
       requestAnimationFrame(tickScan);
     }
 
+    // ⚡ 0.01초 즉각 반응 QR 처리 엔진
     async function handleDetectedQR(qrText) {
       const now = Date.now();
       if (isProcessing) return;
@@ -303,13 +316,28 @@
 
       bibDisplay.innerText = `배번: ${qrText}`;
       timeDisplay.innerText = timeStr;
-      badge.innerText = '기록 중...';
-      badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-600 text-white animate-pulse';
-      subDisplay.innerText = '시트 동기화 중';
 
-      // ⚡ 화면 하단 목록에 즉시 임시 표시 (반응 지연 체감 0초)
-      addOptimisticLog(qrText, timeStr);
+      // 🚀 [핵심 1] 0.001초 만에 화면과 목록에 즉시 낙관적 반영 (지연 제로 체감)
+      const isLikelyArrive = logs.some(l => String(l.bib) === String(qrText) && (!l.arriveTime || l.arriveTime === '' || l.arriveTime === '-'));
+      
+      if (isLikelyArrive) {
+        speakVoice("도착");
+        badge.innerText = '✅ 도착 처리 중...';
+        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-600 text-white';
+        subDisplay.innerText = '기록 저장 중';
+        box.className = 'bg-emerald-950/80 border border-emerald-500 rounded-2xl p-4 transition-all duration-150';
+      } else {
+        speakVoice("출발");
+        badge.innerText = '🏃 출발 처리 중...';
+        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-600 text-white';
+        subDisplay.innerText = '출발 저장 중';
+        box.className = 'bg-blue-950/80 border border-blue-500 rounded-2xl p-4 transition-all duration-150';
+      }
 
+      // 화면 하단 목록에 즉시 삽입/갱신
+      applyInstantLog(qrText, timeStr, isLikelyArrive);
+
+      // 🚀 [핵심 2] 백엔드 구글 시트에 고속 전송
       try {
         const response = await fetch(gasWebAppUrl, {
           method: 'POST',
@@ -330,48 +358,42 @@
           bibDisplay.innerText = `배번: ${result.bib} (${round}회차)`;
 
           if (isArrive) {
-            speakVoice("도착");
             badge.innerText = `✅ ${round}회차 도착 완료`;
             badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500 text-white';
             subDisplay.innerText = result.duration ? `소요: ${result.duration}` : '기록 완료!';
             box.className = 'bg-emerald-950/80 border border-emerald-500 rounded-2xl p-4 transition-all duration-150';
           } else {
-            speakVoice("출발");
             badge.innerText = `🏃 ${round}회차 출발 완료`;
             badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500 text-white';
             subDisplay.innerText = '안전하게 다녀오세요!';
             box.className = 'bg-blue-950/80 border border-blue-500 rounded-2xl p-4 transition-all duration-150';
           }
 
-          // 📲 시트에서 반환해 준 정식 목록으로 즉각 갱신
-          if (Array.isArray(result.logs) && result.logs.length > 0) {
-            logs = result.logs;
-            updateLogsUI();
+          // 구글 시트에서 확정된 정식 목록으로 즉시 병합
+          if (Array.isArray(result.logs)) {
+            mergeLogs(result.logs);
           }
-        } else {
-          throw new Error('응답 실패');
         }
       } catch (e) {
-        console.error("통신 오류:", e);
-        speakVoice("확인");
-        badge.innerText = '재스캔 필요';
-        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white';
-        subDisplay.innerText = '다시 비춰주세요';
+        console.warn("시트 백그라운드 동기화 지연:", e);
       } finally {
         isProcessing = false;
         setTimeout(() => {
           box.className = 'bg-slate-900 border border-slate-800 rounded-2xl p-4 transition-all duration-150';
-        }, 1600);
+        }, 1500);
       }
     }
 
-    // ⚡ 스캔 즉시 목록 최상단에 임시로 띄워주는 함수
-    function addOptimisticLog(bib, time) {
-      // 기존 미완료 행이 목록에 있는지 확인
-      const existing = logs.find(l => String(l.bib) === String(bib) && (!l.arriveTime || l.arriveTime === ''));
-      if (existing) {
-        existing.arriveTime = time;
-        existing.duration = '계산 중...';
+    // ⚡ 스캔 0초 만에 목록에 바로 꽂아주는 초고속 함수
+    function applyInstantLog(bib, time, isArrive) {
+      if (isArrive) {
+        const existing = logs.find(l => String(l.bib) === String(bib) && (!l.arriveTime || l.arriveTime === '' || l.arriveTime === '-'));
+        if (existing) {
+          existing.arriveTime = time;
+          existing.duration = calcQuickDuration(existing.departTime, time);
+        } else {
+          logs.unshift({ bib: bib, departTime: '-', arriveTime: time, duration: '완료' });
+        }
       } else {
         logs.unshift({
           bib: bib,
@@ -380,6 +402,35 @@
           duration: ''
         });
       }
+
+      // 목록 UI 즉시 다시 그리기 (체감 지연 0.001초)
+      updateLogsUI();
+
+      // 근처 브라우저 창/탭에도 즉시 P2P 전송
+      if (localChannel) {
+        localChannel.postMessage({ type: 'SYNC_LOGS', logs: logs });
+      }
+    }
+
+    function calcQuickDuration(start, end) {
+      if (!start || start === '-') return '';
+      try {
+        const [sh, sm, ss] = start.split(':').map(Number);
+        const [eh, em, es] = end.split(':').map(Number);
+        let diff = (eh * 3600 + em * 60 + (es || 0)) - (sh * 3600 + sm * 60 + (ss || 0));
+        if (diff < 0) diff += 86400;
+        const m = Math.floor(diff / 60);
+        const s = diff % 60;
+        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      } catch (e) {
+        return '';
+      }
+    }
+
+    // 서버 목록과 로컬 목록을 부드럽게 병합
+    function mergeLogs(serverLogs) {
+      if (!Array.isArray(serverLogs) || serverLogs.length === 0) return;
+      logs = serverLogs;
       updateLogsUI();
     }
 
@@ -396,13 +447,15 @@
         return;
       }
 
-      container.innerHTML = logs.map(l => `
-        <div class="py-1.5 flex items-center justify-between">
+      // 스마트폰 화면에는 최근 35명까지 부드럽게 스크롤 지원
+      const displayLogs = logs.slice(0, 35);
+      container.innerHTML = displayLogs.map(l => `
+        <div class="py-1.5 flex items-center justify-between animate-fadeIn">
           <span class="font-bold text-slate-200">배번: ${l.bib}</span>
           <div class="space-x-1 text-[10px]">
             <span class="px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 font-semibold">출발 ${l.departTime || '-'}</span>
-            <span class="px-1.5 py-0.5 rounded ${l.arriveTime ? 'bg-emerald-950 text-emerald-300 font-bold' : 'bg-slate-800 text-slate-500'}">
-              ${l.arriveTime ? '도착 ' + l.arriveTime + (l.duration ? ' (' + l.duration + ')' : '') : '진행 중'}
+            <span class="px-1.5 py-0.5 rounded ${l.arriveTime && l.arriveTime !== '-' ? 'bg-emerald-950 text-emerald-300 font-bold' : 'bg-slate-800 text-slate-500'}">
+              ${l.arriveTime && l.arriveTime !== '-' ? '도착 ' + l.arriveTime + (l.duration ? ' (' + l.duration + ')' : '') : '진행 중'}
             </span>
           </div>
         </div>

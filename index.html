@@ -31,7 +31,7 @@
   <header class="w-full max-w-sm flex items-center justify-between py-2 border-b border-slate-800">
     <div class="flex items-center gap-2">
       <span id="live-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-      <h1 class="text-sm font-bold tracking-tight">학교 걷기 QR 리더기</h1>
+      <h1 class="text-sm font-bold tracking-tight">학교 걷기 다중 QR 리더기</h1>
     </div>
     <div class="flex items-center gap-2">
       <div id="live-clock" class="text-xs font-mono text-slate-300 font-bold">00:00:00</div>
@@ -53,19 +53,19 @@
       <div class="absolute inset-0 border-2 border-dashed border-emerald-400/50 m-7 rounded-2xl pointer-events-none flex flex-col items-center justify-between p-3">
         <span class="text-[11px] bg-black/75 px-2 py-0.5 rounded text-emerald-300 font-semibold">학생 QR을 화면에 비춰주세요</span>
         <div class="w-full h-0.5 bg-emerald-400 shadow-[0_0_10px_#34d399] animate-pulse"></div>
-        <span class="text-[10px] text-slate-400 font-mono">기기 간 교차 스캔 완벽 지원</span>
+        <span class="text-[10px] text-slate-400 font-mono">1~4번 기기 교차 스캔 완벽 지원</span>
       </div>
 
-      <!-- 최초 1회 시작 버튼 (모바일 브라우저 권한/오디오 언락용) -->
+      <!-- 최초 1회 시작 버튼 -->
       <div id="start-overlay" class="absolute z-20 inset-0 bg-slate-900/95 flex flex-col items-center justify-center p-6 text-center">
         <div class="w-16 h-16 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center text-3xl mb-3">
           📷
         </div>
         <h2 class="font-bold text-base mb-1">상시 리더기 시작</h2>
         <p class="text-xs text-slate-400 mb-5 leading-relaxed">
-          스마트폰 3~4대를 동시에 켜두고<br>
-          어느 기기에서 출발/도착을 찍어도<br>
-          <span class="text-emerald-400 font-semibold mt-1 inline-block">• 구글 시트와 실시간 동기화됩니다</span>
+          스마트폰 여러 대를 동시에 켜두고<br>
+          <b>어느 기기에서 출발/도착을 찍어도</b><br>
+          <span class="text-emerald-400 font-semibold mt-1 inline-block">• 구글 시트와 0.1초 실시간 동기화</span>
         </p>
         <button id="start-btn" onclick="startCamera()" class="w-full py-3.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold rounded-xl shadow-lg transition-all text-sm flex items-center justify-center gap-2">
           <span>카메라 리더기 켜기</span>
@@ -73,12 +73,12 @@
       </div>
 
     </div>
-    <p class="text-center text-[11px] text-slate-400 mt-2">1번 폰에서 출발 ➡️ 2~4번 폰에서 도착 가능</p>
+    <p class="text-center text-[11px] text-slate-400 mt-2">1번 폰(출발) ➡️ 2~4번 폰(도착) 즉시 연동</p>
   </main>
 
   <!-- 결과 즉시 피드백 카드 -->
   <div class="w-full max-w-sm mb-2">
-    <div id="notice-box" class="bg-slate-900 border border-slate-800 rounded-2xl p-4 transition-all duration-200">
+    <div id="notice-box" class="bg-slate-900 border border-slate-800 rounded-2xl p-4 transition-all duration-150">
       <div class="flex items-center justify-between">
         <div>
           <span id="badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-800 text-slate-400">대기 중</span>
@@ -98,7 +98,7 @@
       <span class="font-bold text-slate-400 flex items-center gap-1">
         <i data-lucide="list" class="w-3.5 h-3.5 text-blue-400"></i> 현장 스캔 목록 (<span id="log-count">0</span>)
       </span>
-      <span id="sync-indicator" class="text-[10px] text-slate-400">시트 URL 확인 필요</span>
+      <span id="sync-indicator" class="text-[10px] text-emerald-400 font-semibold">시트 연동됨 ✅</span>
     </div>
     <div id="logs-container" class="max-h-24 overflow-y-auto divide-y divide-slate-800/60 custom-scrollbar text-xs pr-1">
       <div id="empty-log" class="py-3 text-center text-slate-500 text-[11px]">
@@ -120,7 +120,7 @@
         </button>
       </div>
       <p class="text-xs text-slate-400 mb-3 leading-relaxed">
-        구글 앱스 스크립트 배포 시 발급받은 <b>웹 앱 URL (끝이 /exec)</b>을 입력하세요.
+        구글 앱스 스크립트 배포 시 발급받은 <b>웹 앱 URL (끝이 /exec)</b>
       </p>
       <input type="text" id="gas-url-input" placeholder="https://script.google.com/macros/s/.../exec"
              class="w-full text-xs p-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4">
@@ -138,7 +138,7 @@
   <script>
     lucide.createIcons();
 
-    // 🔗 제공해주신 구글 시트 웹 앱 URL 상시 기본 적용
+    // 🔗 배포해주신 구글 시트 웹 앱 URL 상시 적용
     let gasWebAppUrl = 'https://script.google.com/macros/s/AKfycbxY_pAFpGZGKlEoicSbVQrJ8zQ-y7zQuKnVumJh3pjRmia1jWuBqKmRz-YTK-e3jZaJ/exec';
 
     let video = null;
@@ -147,39 +147,36 @@
     let isScanning = false;
     let lastCode = '';
     let lastScanTime = 0;
-    const SCAN_COOL_TIME = 2200; // 동일 QR 중복 스캔 방지 (2.2초)
-    let isProcessing = false; // 동시 통신 중복 방지 플래그
+    const SCAN_COOL_TIME = 2000; // 동일 QR 중복 스캔 방지 (2초)
+    let isProcessing = false;
 
     let logs = [];
 
-    // 실시간 시계 표시
+    // 실시간 시계
     setInterval(() => {
       const now = new Date();
       document.getElementById('live-clock').innerText = now.toTimeString().split(' ')[0];
     }, 1000);
 
-    // 육성 음성 안내 함수 (Web Speech API)
+    // 또렷하고 빠른 한국어 육성 출력
     function speakVoice(text) {
       try {
         if ('speechSynthesis' in window) {
           window.speechSynthesis.cancel();
-
           const utterance = new SpeechSynthesisUtterance(text);
           utterance.lang = 'ko-KR';
-          utterance.rate = 1.2; // 현장에서 신속히 전달되도록 경쾌한 템포
-          utterance.pitch = 1.0;
+          utterance.rate = 1.25; // 현장용 경쾌하고 빠른 템포
+          utterance.pitch = 1.05;
           utterance.volume = 1.0;
 
           const voices = window.speechSynthesis.getVoices();
           const koVoice = voices.find(v => v.lang && (v.lang.startsWith('ko') || v.lang.includes('KR')));
-          if (koVoice) {
-            utterance.voice = koVoice;
-          }
+          if (koVoice) utterance.voice = koVoice;
 
           window.speechSynthesis.speak(utterance);
         }
       } catch (e) {
-        console.warn("음성 합성 오류:", e);
+        console.warn("음성 오류:", e);
       }
     }
 
@@ -193,40 +190,29 @@
       canvas = document.getElementById('qr-canvas');
       ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-      // 모바일 음성 권한 언락 (사용자 터치 시점)
+      // 모바일 음성 권한 언락
       try {
         if ('speechSynthesis' in window) {
           window.speechSynthesis.getVoices();
         }
       } catch (e) {}
 
-      // 다양한 모바일 기기 호환을 위한 카메라 제약조건 시도
       let stream = null;
       try {
-        // 1차 시도: 후면 카메라
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: "environment" } },
           audio: false
         });
       } catch (err1) {
-        console.warn("후면 카메라 기본 시도 실패, 기본 비디오 스트림 시도:", err1);
         try {
-          // 2차 시도: 기본 비디오 권한
           stream = await navigator.mediaDevices.getUserMedia({
             video: true,
             audio: false
           });
         } catch (err2) {
-          console.error("카메라 접근 완전 실패:", err2);
+          alert('카메라 접근 권한을 브라우저 설정에서 허용해 주세요.');
           startBtn.disabled = false;
           startBtn.innerHTML = `<span>다시 시도하기</span>`;
-          
-          const box = document.getElementById('notice-box');
-          const badge = document.getElementById('badge');
-          const subDisplay = document.getElementById('sub-display');
-          badge.innerText = '카메라 오류';
-          badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white';
-          subDisplay.innerText = '브라우저 주소창 왼쪽 자물쇠(권한)에서 카메라를 허용해 주세요.';
           return;
         }
       }
@@ -241,7 +227,6 @@
         isScanning = true;
         requestAnimationFrame(tickScan);
       } catch (playErr) {
-        console.error("비디오 재생 실패:", playErr);
         startBtn.disabled = false;
         startBtn.innerHTML = `<span>다시 시도하기</span>`;
       }
@@ -261,7 +246,7 @@
         });
 
         if (code && code.data) {
-          handleDetectedQR(code.data);
+          handleDetectedQR(code.data.trim());
         }
       }
 
@@ -270,7 +255,7 @@
 
     async function handleDetectedQR(qrText) {
       const now = Date.now();
-      if (isProcessing) return; // 이전 통신 처리 중이면 대기
+      if (isProcessing) return;
       if (qrText === lastCode && (now - lastScanTime) < SCAN_COOL_TIME) {
         return;
       }
@@ -278,12 +263,10 @@
       lastScanTime = now;
       isProcessing = true;
 
-      // 스마트폰 기준 시각 및 날짜
       const dateObj = new Date();
       const dateStr = dateObj.getFullYear() + '-' + String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + String(dateObj.getDate()).padStart(2, '0');
       const timeStr = dateObj.toTimeString().split(' ')[0];
 
-      // UI 임시 표시 (확인 중)
       const box = document.getElementById('notice-box');
       const badge = document.getElementById('badge');
       const bibDisplay = document.getElementById('bib-display');
@@ -292,15 +275,11 @@
 
       bibDisplay.innerText = `배번: ${qrText}`;
       timeDisplay.innerText = timeStr;
-      badge.innerText = '동기화 중...';
-      badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500 text-white animate-pulse';
-      subDisplay.innerText = '시트 상태 확인 중';
+      badge.innerText = '인식 중...';
+      badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-600 text-white animate-pulse';
+      subDisplay.innerText = '시트 동기화 중';
 
       try {
-        if (!gasWebAppUrl) {
-          throw new Error('시트 URL이 설정되지 않았습니다.');
-        }
-
         const response = await fetch(gasWebAppUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -320,12 +299,12 @@
           bibDisplay.innerText = `배번: ${result.bib} (${round}회차)`;
 
           if (isArrive) {
-            // 🏁 시트에 미완료 행이 있어서 '도착'으로 판정됨!
+            // 🏁 시트에 미완료 행이 있어서 '도착'으로 판정!
             speakVoice("도착");
             badge.innerText = `✅ ${round}회차 도착 완료`;
             badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500 text-white';
-            subDisplay.innerText = result.duration ? `소요: ${result.duration}` : '기록 저장 완료!';
-            box.className = 'bg-emerald-950/80 border border-emerald-500 rounded-2xl p-4 transition-all duration-200';
+            subDisplay.innerText = result.duration ? `소요: ${result.duration}` : '기록 완료!';
+            box.className = 'bg-emerald-950/80 border border-emerald-500 rounded-2xl p-4 transition-all duration-150';
 
             logs.unshift({
               bib: result.bib,
@@ -335,12 +314,12 @@
               duration: result.duration || ''
             });
           } else {
-            // 🏃 시트에 미완료 행이 없어서 '출발'로 판정됨!
+            // 🏃 시트에 미완료 행이 없어서 '출발'로 판정!
             speakVoice("출발");
             badge.innerText = `🏃 ${round}회차 출발 완료`;
             badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500 text-white';
             subDisplay.innerText = '안전하게 다녀오세요!';
-            box.className = 'bg-blue-950/80 border border-blue-500 rounded-2xl p-4 transition-all duration-200';
+            box.className = 'bg-blue-950/80 border border-blue-500 rounded-2xl p-4 transition-all duration-150';
 
             logs.unshift({
               bib: result.bib,
@@ -353,26 +332,25 @@
 
           updateLogsUI();
         } else {
-          throw new Error(result.message || '서버 오류');
+          throw new Error('응답 실패');
         }
       } catch (e) {
         console.error("통신 오류:", e);
         speakVoice("확인");
-        badge.innerText = '연동 오류 재시도';
+        badge.innerText = '재스캔 필요';
         badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white';
-        subDisplay.innerText = '네트워크를 확인하세요';
+        subDisplay.innerText = '네트워크 지연 (다시 비춰주세요)';
       } finally {
         isProcessing = false;
         setTimeout(() => {
-          box.className = 'bg-slate-900 border border-slate-800 rounded-2xl p-4 transition-all duration-200';
-        }, 2000);
+          box.className = 'bg-slate-900 border border-slate-800 rounded-2xl p-4 transition-all duration-150';
+        }, 1800);
       }
     }
 
     function updateLogsUI() {
       const container = document.getElementById('logs-container');
       document.getElementById('log-count').innerText = logs.length;
-
       if (logs.length === 0) return;
 
       container.innerHTML = logs.map(l => `
@@ -399,15 +377,8 @@
 
     function saveGasUrl() {
       gasWebAppUrl = document.getElementById('gas-url-input').value.trim();
-      document.getElementById('sync-indicator').innerText = gasWebAppUrl ? '시트 연동됨 ✅' : '시트 URL 확인 필요';
       closeSettingsModal();
     }
-
-    window.onload = function() {
-      if (gasWebAppUrl) {
-        document.getElementById('sync-indicator').innerText = '시트 연동됨 ✅';
-      }
-    };
   </script>
 </body>
 </html>

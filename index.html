@@ -6,7 +6,7 @@
   <title>학교 걷기 상시 QR 리더기</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- 고성능 모바일 QR 인식 엔진 jsQR -->
+  <!-- 고성능 모바일 QR 엔진 jsQR -->
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
@@ -49,11 +49,11 @@
       <video id="video-feed" playsinline muted autoplay></video>
       <canvas id="qr-canvas" class="hidden"></canvas>
 
-      <!-- 스캔 조준선 가이드 -->
+      <!-- 스캔 가이드 뷰파인더 -->
       <div class="absolute inset-0 border-2 border-dashed border-emerald-400/50 m-7 rounded-2xl pointer-events-none flex flex-col items-center justify-between p-3">
         <span class="text-[11px] bg-black/75 px-2 py-0.5 rounded text-emerald-300 font-semibold">학생 QR을 화면에 비춰주세요</span>
         <div class="w-full h-0.5 bg-emerald-400 shadow-[0_0_10px_#34d399] animate-pulse"></div>
-        <span class="text-[10px] text-slate-400">자동 인식 중</span>
+        <span class="text-[10px] text-slate-400 font-mono">1회:출발 / 2회:도착</span>
       </div>
 
       <!-- 최초 1회 시작 버튼 (모바일 브라우저 권한/오디오 언락용) -->
@@ -64,7 +64,8 @@
         <h2 class="font-bold text-base mb-1">상시 리더기 시작</h2>
         <p class="text-xs text-slate-400 mb-5 leading-relaxed">
           화면을 켜두면 학생들이 지나가면서<br>
-          스마트폰에 찍고 즉시 기록됩니다.
+          스마트폰에 찍고 즉시 기록됩니다.<br>
+          <span class="text-emerald-400 font-semibold mt-1 inline-block">• 홀수 번째: 출발 / 짝수 번째: 도착</span>
         </p>
         <button id="start-btn" onclick="startCamera()" class="w-full py-3.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold rounded-xl shadow-lg transition-all text-sm flex items-center justify-center gap-2">
           <span>카메라 리더기 켜기</span>
@@ -75,7 +76,7 @@
     <p class="text-center text-[11px] text-slate-400 mt-2">화면이 켜진 상태로 거치해 두면 학생들이 차례대로 찍습니다</p>
   </main>
 
-  <!-- 결과 즉시 표시 카드 -->
+  <!-- 결과 즉시 피드백 카드 -->
   <div class="w-full max-w-sm mb-2">
     <div id="notice-box" class="bg-slate-900 border border-slate-800 rounded-2xl p-4 transition-all duration-200">
       <div class="flex items-center justify-between">
@@ -137,7 +138,7 @@
   <script>
     lucide.createIcons();
 
-    // 🔗 1단계에서 복사한 웹 앱 URL을 아래 따옴표 안에 미리 넣어두면 설정창을 열 필요도 없습니다!
+    // 🔗 배포한 웹 앱 URL을 아래 따옴표 안에 미리 넣어두시면 설정창을 열 필요도 없습니다!
     let gasWebAppUrl = 'https://script.google.com/macros/s/AKfycbxY_pAFpGZGKlEoicSbVQrJ8zQ-y7zQuKnVumJh3pjRmia1jWuBqKmRz-YTK-e3jZaJ/exec';
 
     let video = null;
@@ -147,6 +148,9 @@
     let lastCode = '';
     let lastScanTime = 0;
     const SCAN_COOL_TIME = 2200; // 동일 QR 중복 스캔 방지 (2.2초)
+
+    // 학생별 오늘 스캔 횟수 추적 맵 { "배번": 스캔횟수 }
+    const studentScanCounts = {};
     let logs = [];
 
     // 실시간 시계 표시
@@ -167,14 +171,14 @@
         gain.connect(audioCtx.destination);
 
         if (isArrive) {
-          // 도착 시 경쾌한 2화음
+          // 짝수 번째(도착): 경쾌한 2화음 삐-빅!
           osc.frequency.setValueAtTime(587, audioCtx.currentTime);
           osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.08);
           gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
           osc.start();
           osc.stop(audioCtx.currentTime + 0.25);
         } else {
-          // 출발 시 단음
+          // 홀수 번째(출발): 1화음 삐-
           osc.frequency.setValueAtTime(740, audioCtx.currentTime);
           gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
           osc.start();
@@ -195,7 +199,6 @@
       } catch (e) {}
 
       try {
-        // 스마트폰 후면 카메라 강제 실행
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false
@@ -209,7 +212,7 @@
         isScanning = true;
         requestAnimationFrame(tickScan);
       } catch (err) {
-        console.warn("후면 실패, 기본 모드 시도:", err);
+        console.warn("후면 카메라 실패, 기본 비디오 시도:", err);
         try {
           const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
           video.srcObject = fallbackStream;
@@ -219,7 +222,7 @@
           isScanning = true;
           requestAnimationFrame(tickScan);
         } catch (finalErr) {
-          alert("카메라를 켤 수 없습니다. 브라우저 설정에서 카메라 권한을 확인하세요.");
+          alert("카메라 권한을 확인해 주세요.");
         }
       }
     }
@@ -258,6 +261,17 @@
       const dateStr = dateObj.getFullYear() + '-' + String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + String(dateObj.getDate()).padStart(2, '0');
       const timeStr = dateObj.toTimeString().split(' ')[0];
 
+      // 📌 홀수 = 출발, 짝수 = 도착 로직 카운팅
+      const previousCount = studentScanCounts[qrText] || 0;
+      const currentCount = previousCount + 1;
+      studentScanCounts[qrText] = currentCount;
+
+      const isOdd = (currentCount % 2 === 1);
+      const isArrive = !isOdd; // 짝수면 도착
+
+      // 비프음 재생
+      playBeep(isArrive);
+
       // 로컬 화면 갱신
       const box = document.getElementById('notice-box');
       const badge = document.getElementById('badge');
@@ -265,28 +279,32 @@
       const timeDisplay = document.getElementById('time-display');
       const subDisplay = document.getElementById('sub-display');
 
-      bibDisplay.innerText = '배번: ' + qrText;
+      bibDisplay.innerText = `배번: ${qrText} (${currentCount}회차)`;
       timeDisplay.innerText = timeStr;
 
-      // 로컬 즉시 판별 (출발인지 도착인지)
-      const existing = logs.find(item => item.bib === qrText && item.date === dateStr && item.isDepart && !item.isArrive);
-      const isArrive = !!existing;
-
-      playBeep(isArrive);
-
       if (isArrive) {
-        existing.isArrive = true;
-        existing.arriveTime = timeStr;
-        badge.innerText = '✅ 도착 완료';
+        // 짝수 번째: 도착
+        badge.innerText = `✅ ${currentCount}회차 도착 완료`;
         badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500 text-white';
         subDisplay.innerText = '기록 저장 완료!';
         box.className = 'bg-emerald-950/80 border border-emerald-500 rounded-2xl p-4 transition-all duration-200';
+
+        // 목록 업데이트
+        const targetLog = logs.find(l => l.bib === qrText && !l.arriveTime);
+        if (targetLog) {
+          targetLog.arriveTime = timeStr;
+          targetLog.duration = calcMinutesLocal(targetLog.departTime, timeStr);
+        } else {
+          logs.unshift({ bib: qrText, count: currentCount, departTime: '-', arriveTime: timeStr, duration: '' });
+        }
       } else {
-        logs.unshift({ bib: qrText, date: dateStr, departTime: timeStr, isDepart: true, isArrive: false });
-        badge.innerText = '🏃 출발 완료';
+        // 홀수 번째: 출발
+        badge.innerText = `🏃 ${currentCount}회차 출발 완료`;
         badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500 text-white';
         subDisplay.innerText = '안전하게 다녀오세요!';
         box.className = 'bg-blue-950/80 border border-blue-500 rounded-2xl p-4 transition-all duration-200';
+
+        logs.unshift({ bib: qrText, count: currentCount, departTime: timeStr, arriveTime: '', duration: '' });
       }
 
       // 구글 스프레드시트로 전송
@@ -298,9 +316,10 @@
           body: JSON.stringify({
             bib: qrText,
             time: timeStr,
-            date: dateStr
+            date: dateStr,
+            scanCount: currentCount
           })
-        }).catch(e => console.error("전송 에러:", e));
+        }).catch(e => console.error("전송 오류:", e));
       }
 
       updateLogsUI();
@@ -308,6 +327,18 @@
       setTimeout(() => {
         box.className = 'bg-slate-900 border border-slate-800 rounded-2xl p-4 transition-all duration-200';
       }, 1800);
+    }
+
+    function calcMinutesLocal(startStr, endStr) {
+      try {
+        const [sh, sm, ss] = startStr.split(':').map(Number);
+        const [eh, em, es] = endStr.split(':').map(Number);
+        let diff = (eh * 3600 + em * 60 + es) - (sh * 3600 + sm * 60 + ss);
+        if (diff < 0) diff += 24 * 3600;
+        return Math.round(diff / 60) + '분';
+      } catch (e) {
+        return '';
+      }
     }
 
     function updateLogsUI() {
@@ -322,7 +353,7 @@
           <div class="space-x-1 text-[10px]">
             <span class="px-1.5 py-0.5 rounded bg-blue-950 text-blue-300">출발 ${l.departTime}</span>
             <span class="px-1.5 py-0.5 rounded ${l.arriveTime ? 'bg-emerald-950 text-emerald-300 font-bold' : 'bg-slate-800 text-slate-500'}">
-              ${l.arriveTime ? '도착 ' + l.arriveTime : '진행 중'}
+              ${l.arriveTime ? '도착 ' + l.arriveTime + (l.duration ? ' (' + l.duration + ')' : '') : '진행 중'}
             </span>
           </div>
         </div>

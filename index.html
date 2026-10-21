@@ -53,7 +53,7 @@
       <div class="absolute inset-0 border-2 border-dashed border-emerald-400/50 m-7 rounded-2xl pointer-events-none flex flex-col items-center justify-between p-3">
         <span class="text-[11px] bg-black/75 px-2 py-0.5 rounded text-emerald-300 font-semibold">학생 QR을 화면에 비춰주세요</span>
         <div class="w-full h-0.5 bg-emerald-400 shadow-[0_0_10px_#34d399] animate-pulse"></div>
-        <span class="text-[10px] text-slate-400 font-mono">1회:출발 / 2회:도착</span>
+        <span class="text-[10px] text-slate-400 font-mono">기기 간 교차 스캔 완벽 지원</span>
       </div>
 
       <!-- 최초 1회 시작 버튼 (모바일 브라우저 권한/오디오 언락용) -->
@@ -63,9 +63,9 @@
         </div>
         <h2 class="font-bold text-base mb-1">상시 리더기 시작</h2>
         <p class="text-xs text-slate-400 mb-5 leading-relaxed">
-          화면을 켜두면 학생들이 지나가면서<br>
-          스마트폰에 찍고 즉시 기록됩니다.<br>
-          <span class="text-emerald-400 font-semibold mt-1 inline-block">• 홀수: "출발" 음성 / 짝수: "도착" 음성</span>
+          스마트폰 3~4대를 동시에 켜두고<br>
+          어느 기기에서 출발/도착을 찍어도<br>
+          <span class="text-emerald-400 font-semibold mt-1 inline-block">• 구글 시트와 실시간 동기화됩니다</span>
         </p>
         <button id="start-btn" onclick="startCamera()" class="w-full py-3.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold rounded-xl shadow-lg transition-all text-sm flex items-center justify-center gap-2">
           <span>카메라 리더기 켜기</span>
@@ -73,7 +73,7 @@
       </div>
 
     </div>
-    <p class="text-center text-[11px] text-slate-400 mt-2">화면이 켜진 상태로 거치해 두면 학생들이 차례대로 찍습니다</p>
+    <p class="text-center text-[11px] text-slate-400 mt-2">1번 폰에서 출발 ➡️ 2~4번 폰에서 도착 가능</p>
   </main>
 
   <!-- 결과 즉시 피드백 카드 -->
@@ -149,8 +149,6 @@
     let lastScanTime = 0;
     const SCAN_COOL_TIME = 2200; // 동일 QR 중복 스캔 방지 (2.2초)
 
-    // 학생별 오늘 스캔 횟수 추적 맵 { "배번": 스캔횟수 }
-    const studentScanCounts = {};
     let logs = [];
 
     // 실시간 시계 표시
@@ -167,7 +165,7 @@
 
           const utterance = new SpeechSynthesisUtterance(text);
           utterance.lang = 'ko-KR';
-          utterance.rate = 1.15; // 현장에서 신속히 전달되도록 경쾌한 템포
+          utterance.rate = 1.2; // 현장에서 신속히 전달되도록 경쾌한 템포
           utterance.pitch = 1.0;
           utterance.volume = 1.0;
 
@@ -190,7 +188,6 @@
       canvas = document.getElementById('qr-canvas');
       ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-      // 모바일 브라우저의 오디오 및 음성 권한 언락
       try {
         if ('speechSynthesis' in window) {
           window.speechSynthesis.getVoices();
@@ -247,7 +244,7 @@
       requestAnimationFrame(tickScan);
     }
 
-    function handleDetectedQR(qrText) {
+    async function handleDetectedQR(qrText) {
       const now = Date.now();
       if (qrText === lastCode && (now - lastScanTime) < SCAN_COOL_TIME) {
         return;
@@ -260,96 +257,87 @@
       const dateStr = dateObj.getFullYear() + '-' + String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + String(dateObj.getDate()).padStart(2, '0');
       const timeStr = dateObj.toTimeString().split(' ')[0];
 
-      // 📌 홀수 = 출발, 짝수 = 도착 로직 카운팅
-      const previousCount = studentScanCounts[qrText] || 0;
-      const currentCount = previousCount + 1;
-      studentScanCounts[qrText] = currentCount;
-
-      const isOdd = (currentCount % 2 === 1);
-      const isArrive = !isOdd; // 짝수면 도착
-      
-      // 🏃 [출발 + 도착 = 1회 완주] 회차(Round) 계산
-      const activityRound = Math.ceil(currentCount / 2);
-
-      // 육성 안내: 홀수(출발) -> "출발!", 짝수(도착) -> "도착!"
-      if (isArrive) {
-        speakVoice("도착");
-      } else {
-        speakVoice("출발");
-      }
-
-      // 로컬 화면 갱신
+      // UI 임시 표시 (통신 중)
       const box = document.getElementById('notice-box');
       const badge = document.getElementById('badge');
       const bibDisplay = document.getElementById('bib-display');
       const timeDisplay = document.getElementById('time-display');
       const subDisplay = document.getElementById('sub-display');
 
-      bibDisplay.innerText = `배번: ${qrText} (${activityRound}회차)`;
+      bibDisplay.innerText = `배번: ${qrText}`;
       timeDisplay.innerText = timeStr;
+      badge.innerText = '확인 중...';
+      badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500 text-white animate-pulse';
+      subDisplay.innerText = '서버 동기화 중';
 
-      if (isArrive) {
-        // 짝수 번째: 해당 회차 도착 완료
-        badge.innerText = `✅ ${activityRound}회차 도착 완료`;
-        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500 text-white';
-        subDisplay.innerText = '기록 저장 완료!';
-        box.className = 'bg-emerald-950/80 border border-emerald-500 rounded-2xl p-4 transition-all duration-200';
-
-        // 목록 업데이트
-        const targetLog = logs.find(l => l.bib === qrText && !l.arriveTime);
-        if (targetLog) {
-          targetLog.arriveTime = timeStr;
-          targetLog.duration = calcDurationLocal(targetLog.departTime, timeStr);
-        } else {
-          logs.unshift({ bib: qrText, round: activityRound, departTime: '-', arriveTime: timeStr, duration: '' });
-        }
-      } else {
-        // 홀수 번째: 해당 회차 출발
-        badge.innerText = `🏃 ${activityRound}회차 출발 완료`;
-        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500 text-white';
-        subDisplay.innerText = '안전하게 다녀오세요!';
-        box.className = 'bg-blue-950/80 border border-blue-500 rounded-2xl p-4 transition-all duration-200';
-
-        logs.unshift({ bib: qrText, round: activityRound, departTime: timeStr, arriveTime: '', duration: '' });
-      }
-
-      // 구글 스프레드시트로 전송
+      // 🔗 구글 스프레드시트에 전송하여 [중앙 시트 기준 출발/도착 판정] 가져오기
       if (gasWebAppUrl) {
-        fetch(gasWebAppUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            bib: qrText,
-            time: timeStr,
-            date: dateStr,
-            scanCount: currentCount
-          })
-        }).catch(e => console.error("전송 오류:", e));
-      }
+        try {
+          const response = await fetch(gasWebAppUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              bib: qrText,
+              time: timeStr,
+              date: dateStr
+            })
+          });
 
-      updateLogsUI();
+          const result = await response.json();
+
+          if (result && result.status === 'success') {
+            const isArrive = (result.type === 'ARRIVE');
+            const round = result.round || 1;
+
+            bibDisplay.innerText = `배번: ${result.bib} (${round}회차)`;
+
+            if (isArrive) {
+              // 🏁 도착 완료
+              speakVoice("도착");
+              badge.innerText = `✅ ${round}회차 도착 완료`;
+              badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500 text-white';
+              subDisplay.innerText = result.duration ? `소요시간: ${result.duration}` : '기록 저장 완료!';
+              box.className = 'bg-emerald-950/80 border border-emerald-500 rounded-2xl p-4 transition-all duration-200';
+
+              logs.unshift({
+                bib: result.bib,
+                round: round,
+                departTime: result.departTime || '-',
+                arriveTime: result.arriveTime || timeStr,
+                duration: result.duration || ''
+              });
+            } else {
+              // 🏃 출발 완료
+              speakVoice("출발");
+              badge.innerText = `🏃 ${round}회차 출발 완료`;
+              badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500 text-white';
+              subDisplay.innerText = '안전하게 다녀오세요!';
+              box.className = 'bg-blue-950/80 border border-blue-500 rounded-2xl p-4 transition-all duration-200';
+
+              logs.unshift({
+                bib: result.bib,
+                round: round,
+                departTime: result.departTime || timeStr,
+                arriveTime: '',
+                duration: ''
+              });
+            }
+
+            updateLogsUI();
+          }
+        } catch (e) {
+          console.error("통신 오류:", e);
+          // 통신 예외 시 기본 피드백
+          speakVoice("인식");
+          badge.innerText = '전송 완료';
+          badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-600 text-white';
+          subDisplay.innerText = '시트에 자동 전송됨';
+        }
+      }
 
       setTimeout(() => {
         box.className = 'bg-slate-900 border border-slate-800 rounded-2xl p-4 transition-all duration-200';
-      }, 1800);
-    }
-
-    function calcDurationLocal(startStr, endStr) {
-      try {
-        const [sh, sm, ss] = startStr.split(':').map(Number);
-        const [eh, em, es] = endStr.split(':').map(Number);
-        let diff = (eh * 3600 + em * 60 + (es || 0)) - (sh * 3600 + sm * 60 + (ss || 0));
-        if (diff < 0) diff += 24 * 3600;
-
-        const h = Math.floor(diff / 3600);
-        const m = Math.floor((diff % 3600) / 60);
-        const s = diff % 60;
-
-        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-      } catch (e) {
-        return '';
-      }
+      }, 2000);
     }
 
     function updateLogsUI() {

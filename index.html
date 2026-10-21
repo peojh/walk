@@ -46,7 +46,7 @@
     <div class="relative w-full rounded-2xl bg-black border-2 border-slate-800 overflow-hidden shadow-2xl flex items-center justify-center min-h-[350px]">
       
       <!-- 스마트폰 후면 카메라 비디오 스트림 -->
-      <video id="video-feed" playsinline muted autoplay></video>
+      <video id="video-feed" playsinline webkit-playsinline muted autoplay></video>
       <canvas id="qr-canvas" class="hidden"></canvas>
 
       <!-- 스캔 가이드 뷰파인더 -->
@@ -148,6 +148,7 @@
     let lastCode = '';
     let lastScanTime = 0;
     const SCAN_COOL_TIME = 2200; // 동일 QR 중복 스캔 방지 (2.2초)
+    let isProcessing = false; // 동시 통신 중복 방지 플래그
 
     let logs = [];
 
@@ -170,7 +171,7 @@
           utterance.volume = 1.0;
 
           const voices = window.speechSynthesis.getVoices();
-          const koVoice = voices.find(v => v.lang.startsWith('ko') || v.lang.includes('KR'));
+          const koVoice = voices.find(v => v.lang && (v.lang.startsWith('ko') || v.lang.includes('KR')));
           if (koVoice) {
             utterance.voice = koVoice;
           }
@@ -184,49 +185,72 @@
 
     async function startCamera() {
       const overlay = document.getElementById('start-overlay');
+      const startBtn = document.getElementById('start-btn');
+      startBtn.disabled = true;
+      startBtn.innerHTML = `<span>카메라 연결 중...</span>`;
+
       video = document.getElementById('video-feed');
       canvas = document.getElementById('qr-canvas');
       ctx = canvas.getContext('2d', { willReadFrequently: true });
 
+      // 모바일 음성 권한 언락 (사용자 터치 시점)
       try {
         if ('speechSynthesis' in window) {
           window.speechSynthesis.getVoices();
         }
       } catch (e) {}
 
+      // 다양한 모바일 기기 호환을 위한 카메라 제약조건 시도
+      let stream = null;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        // 1차 시도: 후면 카메라
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
           audio: false
         });
+      } catch (err1) {
+        console.warn("후면 카메라 기본 시도 실패, 기본 비디오 스트림 시도:", err1);
+        try {
+          // 2차 시도: 기본 비디오 권한
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false
+          });
+        } catch (err2) {
+          console.error("카메라 접근 완전 실패:", err2);
+          startBtn.disabled = false;
+          startBtn.innerHTML = `<span>다시 시도하기</span>`;
+          
+          const box = document.getElementById('notice-box');
+          const badge = document.getElementById('badge');
+          const subDisplay = document.getElementById('sub-display');
+          badge.innerText = '카메라 오류';
+          badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white';
+          subDisplay.innerText = '브라우저 주소창 왼쪽 자물쇠(권한)에서 카메라를 허용해 주세요.';
+          return;
+        }
+      }
 
+      try {
         video.srcObject = stream;
-        video.setAttribute("playsinline", true);
+        video.setAttribute("playsinline", "true");
+        video.setAttribute("webkit-playsinline", "true");
         await video.play();
 
         overlay.classList.add('hidden');
         isScanning = true;
         requestAnimationFrame(tickScan);
-      } catch (err) {
-        console.warn("후면 카메라 실패, 기본 비디오 시도:", err);
-        try {
-          const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          video.srcObject = fallbackStream;
-          video.setAttribute("playsinline", true);
-          await video.play();
-          overlay.classList.add('hidden');
-          isScanning = true;
-          requestAnimationFrame(tickScan);
-        } catch (finalErr) {
-          alert("카메라 권한을 확인해 주세요.");
-        }
+      } catch (playErr) {
+        console.error("비디오 재생 실패:", playErr);
+        startBtn.disabled = false;
+        startBtn.innerHTML = `<span>다시 시도하기</span>`;
       }
     }
 
     function tickScan() {
       if (!isScanning) return;
 
-      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -237,7 +261,12 @@
         });
 
         if (code && code.data) {
-    let isProcessing = false; // 동시 통신 중복 방지 플래그
+          handleDetectedQR(code.data);
+        }
+      }
+
+      requestAnimationFrame(tickScan);
+    }
 
     async function handleDetectedQR(qrText) {
       const now = Date.now();

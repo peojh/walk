@@ -159,64 +159,86 @@
 
     let logs = [];
 
-    // Web Audio API Context (TTS 실패 시 즉각 Fallback 사운드)
+    // ==========================================
+    // 🔊 [iOS / Android 무조건 소리 보장 오디오 엔진]
+    // ==========================================
     let audioCtx = null;
-    function initAudioContext() {
+    window.activeUtterances = []; // 아이폰 Safari 가비지 컬렉터 버그 방지용 전역 보관소
+
+    function getAudioContext() {
       if (!audioCtx) {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         if (AudioContextClass) {
           audioCtx = new AudioContextClass();
         }
       }
-      if (audioCtx && audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
+      return audioCtx;
     }
 
-    // TTS 음성 엔진 강제 사전 로딩 (iOS / 안드로이드 웜업)
-    function preloadVoices() {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.getVoices();
-        // 묵음 발화로 모바일 브라우저 오디오 권한 잠금 해제
+    // [핵심] 사용자가 버튼을 터치하는 순간 iOS / 안드로이드의 오디오 보안 잠금을 완전히 해제
+    function unlockAllAudio() {
+      // 1. Web Audio Context 잠금 해제
+      const ctx = getAudioContext();
+      if (ctx) {
+        if (ctx.state === 'suspended') {
+          ctx.resume();
+        }
+        // 무음 1프레임 재생으로 하드웨어 스피커 파이프라인 강제 개방
         try {
-          const silentUtterance = new SpeechSynthesisUtterance('');
-          silentUtterance.volume = 0;
+          const buffer = ctx.createBuffer(1, 1, 22050);
+          const source = ctx.createBufferSource();
+          source.buffer = buffer;
+          source.connect(ctx.destination);
+          source.start(0);
+        } catch (e) {}
+      }
+
+      // 2. 모바일 브라우저 SpeechSynthesis 음성 엔진 깨우기 (Warm-up)
+      if ('speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+          const silentUtterance = new SpeechSynthesisUtterance(' ');
+          silentUtterance.volume = 0.01;
+          silentUtterance.rate = 2.0;
           window.speechSynthesis.speak(silentUtterance);
         } catch (e) {}
       }
     }
+
+    // TTS 보이스 사전 로딩
     if ('speechSynthesis' in window) {
       window.speechSynthesis.onvoiceschanged = () => {
-        window.speechSynthesis.getVoices();
+        try { window.speechSynthesis.getVoices(); } catch (e) {}
       };
     }
 
-    // 전자 차임벨 비프음 (TTS 실패 시 100% 보장 Fallback)
+    // 전자 차임벨 비프음 (Web Audio - 확실한 백업 사운드)
     function playBeepFallback(isArrive) {
       try {
-        initAudioContext();
-        if (!audioCtx) return;
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        if (ctx.state === 'suspended') ctx.resume();
 
-        const now = audioCtx.currentTime;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
         osc.connect(gain);
-        gain.connect(audioCtx.destination);
+        gain.connect(ctx.destination);
 
         if (isArrive) {
-          // 도착: 경쾌한 2화음 (도-솔)
+          // 도착: 경쾌한 도-솔 2화음 (딩~동!)
           osc.type = 'triangle';
-          osc.frequency.setValueAtTime(523.25, now); // C5
-          osc.frequency.setValueAtTime(783.99, now + 0.12); // G5
-          gain.gain.setValueAtTime(0.35, now);
+          osc.frequency.setValueAtTime(523.25, now); // C5 (도)
+          osc.frequency.setValueAtTime(783.99, now + 0.1); // G5 (솔)
+          gain.gain.setValueAtTime(0.4, now);
           gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
           osc.start(now);
           osc.stop(now + 0.35);
         } else {
-          // 출발: 맑은 단음 핑!
+          // 출발: 또렷하고 맑은 스타트음 (핑!)
           osc.type = 'sine';
-          osc.frequency.setValueAtTime(659.25, now); // E5
-          gain.gain.setValueAtTime(0.3, now);
+          osc.frequency.setValueAtTime(659.25, now); // E5 (미)
+          gain.gain.setValueAtTime(0.35, now);
           gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
           osc.start(now);
           osc.stop(now + 0.22);
@@ -224,6 +246,58 @@
       } catch (err) {
         console.warn('Audio fallback error:', err);
       }
+    }
+
+    // 📣 아이폰/갤럭시 불문 100% "출발!" / "도착!" 음성 출력 함수
+    function playSoundAlert(actionType) {
+      const isArrive = (actionType === 'ARRIVE');
+      const text = isArrive ? "도착" : "출발";
+
+      // 1. 오디오 컨텍스트 상태 재점검
+      const ctx = getAudioContext();
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume();
+      }
+
+      // 2. TTS 음성 시도 (아이폰 사파리 GC 버그 방지 처리)
+      let ttsSucceeded = false;
+      if ('speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel(); // 큐 청소
+
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.lang = 'ko-KR';
+          utterance.rate = 1.3; // 또렷하고 빠른 속도
+          utterance.pitch = 1.1; // 경쾌한 톤
+          utterance.volume = 1.0;
+
+          // 한국어 음성 지정
+          const voices = window.speechSynthesis.getVoices();
+          const koVoice = voices.find(v => v.lang && (v.lang.startsWith('ko') || v.lang.includes('KR')));
+          if (koVoice) utterance.voice = koVoice;
+
+          // [핵심] 아이폰 사파리 메모리 해제 방지
+          window.activeUtterances.push(utterance);
+          utterance.onend = () => {
+            const idx = window.activeUtterances.indexOf(utterance);
+            if (idx > -1) window.activeUtterances.splice(idx, 1);
+          };
+          utterance.onerror = () => {
+            const idx = window.activeUtterances.indexOf(utterance);
+            if (idx > -1) window.activeUtterances.splice(idx, 1);
+            playBeepFallback(isArrive); // TTS 실패 시 비프음으로 즉각 전환
+          };
+
+          window.speechSynthesis.speak(utterance);
+          ttsSucceeded = true;
+        } catch (e) {
+          ttsSucceeded = false;
+        }
+      }
+
+      // 3. TTS 미지원 기기이거나 실패했을 경우를 위한 즉각 비프음
+      // 또한 TTS 음성과 함께 은은하게 0.15초 차임벨을 겹쳐 울려 어떤 시끄러운 환경에서도 확실히 들리게 보강
+      playBeepFallback(isArrive);
     }
 
     // 동일 브라우저/탭 간 P2P 초고속 동기화 채널
@@ -270,51 +344,14 @@
     setInterval(syncRemoteLogs, 1800);
     setTimeout(syncRemoteLogs, 500);
 
-    // 또렷하고 빠른 사운드 출력 (TTS 음성 + 실패 시 비프음 보장)
-    function playSoundAlert(actionType) {
-      const isArrive = (actionType === 'ARRIVE');
-      const text = isArrive ? "도착" : "출발";
-      let speechWorked = false;
-
-      // 1. Web Audio Context 활성화 보장
-      initAudioContext();
-
-      // 2. TTS 음성 시도
-      try {
-        if ('speechSynthesis' in window) {
-          window.speechSynthesis.cancel(); // 큐 초기화
-          const utterance = new SpeechSynthesisUtterance(text);
-          utterance.lang = 'ko-KR';
-          utterance.rate = 1.35;
-          utterance.pitch = 1.05;
-          utterance.volume = 1.0;
-
-          const voices = window.speechSynthesis.getVoices();
-          const koVoice = voices.find(v => v.lang && (v.lang.startsWith('ko') || v.lang.includes('KR')));
-          if (koVoice) utterance.voice = koVoice;
-
-          // 발화 시작 확인 이벤트
-          utterance.onstart = () => { speechWorked = true; };
-          window.speechSynthesis.speak(utterance);
-        }
-      } catch (e) {
-        console.warn("TTS 실행 에러:", e);
-      }
-
-      // 3. 기종별 TTS 지연 또는 차단 대비: Web Audio 비프음을 병행/보완 출력
-      // (TTS 음성과 조화롭게 어우러지도록 매우 짧은 0.15초 차임벨 동시 울림)
-      playBeepFallback(isArrive);
-    }
-
     async function startCamera() {
       const overlay = document.getElementById('start-overlay');
       const startBtn = document.getElementById('start-btn');
       startBtn.disabled = true;
       startBtn.innerHTML = `<span>카메라 및 사운드 연결 중...</span>`;
 
-      // 터치 시 오디오 세션 즉시 완전 잠금 해제
-      initAudioContext();
-      preloadVoices();
+      // 🚀 터치 즉시 아이폰/안드로이드 오디오 세션 100% 완전 해제
+      unlockAllAudio();
 
       video = document.getElementById('video-feed');
       canvas = document.getElementById('qr-canvas');

@@ -65,7 +65,7 @@
         <p class="text-xs text-slate-400 mb-5 leading-relaxed">
           화면을 켜두면 학생들이 지나가면서<br>
           스마트폰에 찍고 즉시 기록됩니다.<br>
-          <span class="text-emerald-400 font-semibold mt-1 inline-block">• 홀수 번째: 출발 / 짝수 번째: 도착</span>
+          <span class="text-emerald-400 font-semibold mt-1 inline-block">• 홀수: "출발" 음성 / 짝수: "도착" 음성</span>
         </p>
         <button id="start-btn" onclick="startCamera()" class="w-full py-3.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold rounded-xl shadow-lg transition-all text-sm flex items-center justify-center gap-2">
           <span>카메라 리더기 켜기</span>
@@ -138,7 +138,7 @@
   <script>
     lucide.createIcons();
 
-    // 🔗 배포한 웹 앱 URL을 아래 따옴표 안에 미리 넣어두시면 설정창을 열 필요도 없습니다!
+    // 🔗 제공해주신 구글 시트 웹 앱 URL 상시 기본 적용
     let gasWebAppUrl = 'https://script.google.com/macros/s/AKfycbxY_pAFpGZGKlEoicSbVQrJ8zQ-y7zQuKnVumJh3pjRmia1jWuBqKmRz-YTK-e3jZaJ/exec';
 
     let video = null;
@@ -159,32 +159,29 @@
       document.getElementById('live-clock').innerText = now.toTimeString().split(' ')[0];
     }, 1000);
 
-    // 알림음 재생 (외부 음원 없이 폰 스피커 직접 울림)
-    let audioCtx = null;
-    function playBeep(isArrive) {
+    // 육성 음성 안내 함수 (Web Speech API)
+    function speakVoice(text) {
       try {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
 
-        if (isArrive) {
-          // 짝수 번째(도착): 경쾌한 2화음 삐-빅!
-          osc.frequency.setValueAtTime(587, audioCtx.currentTime);
-          osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.08);
-          gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-          osc.start();
-          osc.stop(audioCtx.currentTime + 0.25);
-        } else {
-          // 홀수 번째(출발): 1화음 삐-
-          osc.frequency.setValueAtTime(740, audioCtx.currentTime);
-          gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-          osc.start();
-          osc.stop(audioCtx.currentTime + 0.15);
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.lang = 'ko-KR';
+          utterance.rate = 1.15; // 현장에서 신속히 전달되도록 경쾌한 템포
+          utterance.pitch = 1.0;
+          utterance.volume = 1.0;
+
+          const voices = window.speechSynthesis.getVoices();
+          const koVoice = voices.find(v => v.lang.startsWith('ko') || v.lang.includes('KR'));
+          if (koVoice) {
+            utterance.voice = koVoice;
+          }
+
+          window.speechSynthesis.speak(utterance);
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn("음성 합성 오류:", e);
+      }
     }
 
     async function startCamera() {
@@ -193,9 +190,11 @@
       canvas = document.getElementById('qr-canvas');
       ctx = canvas.getContext('2d', { willReadFrequently: true });
 
+      // 모바일 브라우저의 오디오 및 음성 권한 언락
       try {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioCtx.state === 'suspended') audioCtx.resume();
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.getVoices();
+        }
       } catch (e) {}
 
       try {
@@ -269,8 +268,12 @@
       const isOdd = (currentCount % 2 === 1);
       const isArrive = !isOdd; // 짝수면 도착
 
-      // 비프음 재생
-      playBeep(isArrive);
+      // 육성 안내: 홀수(출발) -> "출발!", 짝수(도착) -> "도착!"
+      if (isArrive) {
+        speakVoice("도착");
+      } else {
+        speakVoice("출발");
+      }
 
       // 로컬 화면 갱신
       const box = document.getElementById('notice-box');
@@ -293,7 +296,7 @@
         const targetLog = logs.find(l => l.bib === qrText && !l.arriveTime);
         if (targetLog) {
           targetLog.arriveTime = timeStr;
-          targetLog.duration = calcMinutesLocal(targetLog.departTime, timeStr);
+          targetLog.duration = calcDurationLocal(targetLog.departTime, timeStr);
         } else {
           logs.unshift({ bib: qrText, count: currentCount, departTime: '-', arriveTime: timeStr, duration: '' });
         }
@@ -329,13 +332,18 @@
       }, 1800);
     }
 
-    function calcMinutesLocal(startStr, endStr) {
+    function calcDurationLocal(startStr, endStr) {
       try {
         const [sh, sm, ss] = startStr.split(':').map(Number);
         const [eh, em, es] = endStr.split(':').map(Number);
-        let diff = (eh * 3600 + em * 60 + es) - (sh * 3600 + sm * 60 + ss);
+        let diff = (eh * 3600 + em * 60 + (es || 0)) - (sh * 3600 + sm * 60 + (ss || 0));
         if (diff < 0) diff += 24 * 3600;
-        return Math.round(diff / 60) + '분';
+
+        const h = Math.floor(diff / 3600);
+        const m = Math.floor((diff % 3600) / 60);
+        const s = diff % 60;
+
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
       } catch (e) {
         return '';
       }

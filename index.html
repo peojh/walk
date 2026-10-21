@@ -56,6 +56,17 @@
         <span class="text-[10px] text-slate-400 font-mono">1대 단독 & 다중 기기 완벽 지원</span>
       </div>
 
+      <!-- 🌟 [신규] 출발 / 도착 직관적 대형 플래시 팝업 (가시성 극대화) -->
+      <div id="flash-popup" class="absolute inset-0 z-30 flex flex-col items-center justify-center p-4 bg-black/60 backdrop-blur-[2px] transition-all duration-200 opacity-0 pointer-events-none scale-90">
+        <div id="popup-card" class="w-11/12 max-w-[280px] rounded-3xl p-6 text-center shadow-[0_10px_40px_rgba(0,0,0,0.8)] border-2 transition-all transform flex flex-col items-center justify-center">
+          <div id="popup-icon" class="text-5xl mb-2 animate-bounce">🏃</div>
+          <div id="popup-title" class="text-2xl font-black tracking-tight text-white drop-shadow">출발 완료!</div>
+          <div id="popup-bib" class="text-lg font-bold text-slate-200 mt-1">배번: 101</div>
+          <div id="popup-time" class="text-xs font-mono font-semibold text-slate-300 mt-0.5">14:05:22</div>
+          <div id="popup-duration" class="mt-2 px-3 py-1 rounded-full text-xs font-black bg-white/20 text-white hidden">소요: 00:15:20</div>
+        </div>
+      </div>
+
       <!-- 최초 1회 시작 버튼 오버레이 -->
       <div id="start-overlay" class="absolute z-20 inset-0 bg-slate-900/95 flex flex-col items-center justify-center p-6 text-center">
         <div class="w-16 h-16 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center text-3xl mb-3">
@@ -440,6 +451,14 @@
       // 🚀 [핵심 1] 0.001초 만에 화면과 사운드 즉시 반응
       const isLikelyArrive = logs.some(l => String(l.bib) === String(qrText) && (!l.arriveTime || l.arriveTime === '' || l.arriveTime === '-'));
       
+      // 🌟 [핵심] 시각적 대형 팝업 즉시 호출 (0.001초 딜레이 제로)
+      showFlashPopup({
+        isArrive: isLikelyArrive,
+        bib: qrText,
+        time: timeStr,
+        duration: isLikelyArrive ? '계산 중...' : ''
+      });
+
       if (isLikelyArrive) {
         playSoundAlert('ARRIVE');
         badge.innerText = '✅ 도착 처리 중...';
@@ -482,6 +501,9 @@
             badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500 text-white';
             subDisplay.innerText = result.duration ? `소요: ${result.duration}` : '기록 완료!';
             box.className = 'bg-emerald-950/80 border border-emerald-500 rounded-2xl p-4 transition-all duration-150';
+            
+            // 확정된 소요시간으로 팝업 재갱신
+            updateFlashPopupDuration(result.duration);
           } else {
             badge.innerText = `🏃 ${round}회차 출발 완료`;
             badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500 text-white';
@@ -501,6 +523,63 @@
         setTimeout(() => {
           box.className = 'bg-slate-900 border border-slate-800 rounded-2xl p-4 transition-all duration-150';
         }, 1500);
+      }
+    }
+
+    // ==========================================
+    // 🌟 [시각 피드백: 출발/도착 대형 플래시 팝업 제어]
+    // ==========================================
+    let popupTimer = null;
+    function showFlashPopup({ isArrive, bib, time, duration }) {
+      const popup = document.getElementById('flash-popup');
+      const card = document.getElementById('popup-card');
+      const icon = document.getElementById('popup-icon');
+      const title = document.getElementById('popup-title');
+      const bibEl = document.getElementById('popup-bib');
+      const timeEl = document.getElementById('popup-time');
+      const durationEl = document.getElementById('popup-duration');
+
+      if (popupTimer) clearTimeout(popupTimer);
+
+      bibEl.innerText = `배번: ${bib}`;
+      timeEl.innerText = time;
+
+      if (isArrive) {
+        // 도착: 선명한 에메랄드 그린
+        icon.innerText = '🏁';
+        title.innerText = '도착 완료!';
+        card.className = 'w-11/12 max-w-[280px] rounded-3xl p-6 text-center shadow-[0_0_50px_rgba(16,185,129,0.7)] border-2 border-emerald-400 bg-emerald-950/95 flex flex-col items-center justify-center';
+        if (duration) {
+          durationEl.innerText = `소요: ${duration}`;
+          durationEl.classList.remove('hidden');
+        } else {
+          durationEl.classList.add('hidden');
+        }
+      } else {
+        // 출발: 선명하고 시원한 블루
+        icon.innerText = '🏃';
+        title.innerText = '출발 완료!';
+        card.className = 'w-11/12 max-w-[280px] rounded-3xl p-6 text-center shadow-[0_0_50px_rgba(59,130,246,0.7)] border-2 border-blue-400 bg-blue-950/95 flex flex-col items-center justify-center';
+        durationEl.classList.add('hidden');
+      }
+
+      // 애니메이션 노출
+      popup.classList.remove('opacity-0', 'pointer-events-none', 'scale-90');
+      popup.classList.add('opacity-100', 'scale-100');
+
+      // 1.3초 후 부드럽게 소멸
+      popupTimer = setTimeout(() => {
+        popup.classList.remove('opacity-100', 'scale-100');
+        popup.classList.add('opacity-0', 'pointer-events-none', 'scale-90');
+      }, 1300);
+    }
+
+    function updateFlashPopupDuration(duration) {
+      if (!duration) return;
+      const durationEl = document.getElementById('popup-duration');
+      if (durationEl) {
+        durationEl.innerText = `소요: ${duration}`;
+        durationEl.classList.remove('hidden');
       }
     }
 

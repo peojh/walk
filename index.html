@@ -167,6 +167,7 @@
     const SCAN_COOL_TIME = 1200; // 연속 동일 스캔 쿨타임 단축 (1.2초)
     let isProcessing = false;
     let isSyncing = false;
+    const POPUP_DURATION = 1300; // 팝업 노출 및 피드백 상태 지속 시간 (1.3초 일치)
 
     let logs = [];
 
@@ -522,7 +523,10 @@
         isProcessing = false;
         setTimeout(() => {
           box.className = 'bg-slate-900 border border-slate-800 rounded-2xl p-4 transition-all duration-150';
-        }, 1500);
+          badge.innerText = '대기 중';
+          badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-800 text-slate-400';
+          subDisplay.innerText = '기록 대기';
+        }, POPUP_DURATION);
       }
     }
 
@@ -567,11 +571,11 @@
       popup.classList.remove('opacity-0', 'pointer-events-none', 'scale-90');
       popup.classList.add('opacity-100', 'scale-100');
 
-      // 1.3초 후 부드럽게 소멸
+      // 하단 카드와 정확히 동일한 시간(POPUP_DURATION) 뒤에 동시 소멸
       popupTimer = setTimeout(() => {
         popup.classList.remove('opacity-100', 'scale-100');
         popup.classList.add('opacity-0', 'pointer-events-none', 'scale-90');
-      }, 1300);
+      }, POPUP_DURATION);
     }
 
     function updateFlashPopupDuration(duration) {

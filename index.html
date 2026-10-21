@@ -478,6 +478,7 @@
       applyInstantLog(qrText, timeStr, isLikelyArrive);
 
       // 🚀 [핵심 2] 백엔드 구글 시트에 고속 전송
+      let finalDuration = '';
       try {
         const response = await fetch(gasWebAppUrl, {
           method: 'POST',
@@ -494,22 +495,39 @@
         if (result && result.status === 'success') {
           const isArrive = (result.type === 'ARRIVE');
           const round = result.round || 1;
+          finalDuration = result.duration || '';
 
           bibDisplay.innerText = `배번: ${result.bib} (${round}회차)`;
 
           if (isArrive) {
             badge.innerText = `✅ ${round}회차 도착 완료`;
             badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500 text-white';
-            subDisplay.innerText = result.duration ? `소요: ${result.duration}` : '기록 완료!';
+            subDisplay.innerText = finalDuration ? `소요: ${finalDuration}` : '기록 완료!';
             box.className = 'bg-emerald-950/80 border border-emerald-500 rounded-2xl p-4 transition-all duration-150';
             
-            // 확정된 소요시간으로 팝업 재갱신
-            updateFlashPopupDuration(result.duration);
+            // 확정된 소요시간 및 완료 타이틀로 팝업 재갱신
+            setFlashPopupStatus({
+              isArrive: true,
+              bib: result.bib,
+              time: timeStr,
+              duration: finalDuration,
+              round: round,
+              isDone: true
+            });
           } else {
             badge.innerText = `🏃 ${round}회차 출발 완료`;
             badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500 text-white';
             subDisplay.innerText = '안전하게 다녀오세요!';
             box.className = 'bg-blue-950/80 border border-blue-500 rounded-2xl p-4 transition-all duration-150';
+
+            setFlashPopupStatus({
+              isArrive: false,
+              bib: result.bib,
+              time: timeStr,
+              duration: '',
+              round: round,
+              isDone: true
+            });
           }
 
           // 구글 시트에서 확정된 정식 목록으로 즉시 병합
@@ -521,7 +539,9 @@
         console.warn("시트 백그라운드 동기화 지연:", e);
       } finally {
         isProcessing = false;
+        // 🌟 [핵심] '출발 완료' / '도착 완료'가 확정된 후 정확히 POPUP_DURATION 동안 유지되고 동시 소멸
         setTimeout(() => {
+          hideFlashPopup();
           box.className = 'bg-slate-900 border border-slate-800 rounded-2xl p-4 transition-all duration-150';
           badge.innerText = '대기 중';
           badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-800 text-slate-400';
@@ -533,9 +553,14 @@
     // ==========================================
     // 🌟 [시각 피드백: 출발/도착 대형 플래시 팝업 제어]
     // ==========================================
-    let popupTimer = null;
     function showFlashPopup({ isArrive, bib, time, duration }) {
+      setFlashPopupStatus({ isArrive, bib, time, duration, round: 1, isDone: false });
       const popup = document.getElementById('flash-popup');
+      popup.classList.remove('opacity-0', 'pointer-events-none', 'scale-90');
+      popup.classList.add('opacity-100', 'scale-100');
+    }
+
+    function setFlashPopupStatus({ isArrive, bib, time, duration, round, isDone }) {
       const card = document.getElementById('popup-card');
       const icon = document.getElementById('popup-icon');
       const title = document.getElementById('popup-title');
@@ -543,15 +568,12 @@
       const timeEl = document.getElementById('popup-time');
       const durationEl = document.getElementById('popup-duration');
 
-      if (popupTimer) clearTimeout(popupTimer);
-
-      bibEl.innerText = `배번: ${bib}`;
+      bibEl.innerText = isDone ? `배번: ${bib} (${round}회차)` : `배번: ${bib}`;
       timeEl.innerText = time;
 
       if (isArrive) {
-        // 도착: 선명한 에메랄드 그린
         icon.innerText = '🏁';
-        title.innerText = '도착 완료!';
+        title.innerText = isDone ? `${round}회차 도착 완료!` : '도착 처리 중...';
         card.className = 'w-11/12 max-w-[280px] rounded-3xl p-6 text-center shadow-[0_0_50px_rgba(16,185,129,0.7)] border-2 border-emerald-400 bg-emerald-950/95 flex flex-col items-center justify-center';
         if (duration) {
           durationEl.innerText = `소요: ${duration}`;
@@ -560,30 +582,18 @@
           durationEl.classList.add('hidden');
         }
       } else {
-        // 출발: 선명하고 시원한 블루
         icon.innerText = '🏃';
-        title.innerText = '출발 완료!';
+        title.innerText = isDone ? `${round}회차 출발 완료!` : '출발 처리 중...';
         card.className = 'w-11/12 max-w-[280px] rounded-3xl p-6 text-center shadow-[0_0_50px_rgba(59,130,246,0.7)] border-2 border-blue-400 bg-blue-950/95 flex flex-col items-center justify-center';
         durationEl.classList.add('hidden');
       }
-
-      // 애니메이션 노출
-      popup.classList.remove('opacity-0', 'pointer-events-none', 'scale-90');
-      popup.classList.add('opacity-100', 'scale-100');
-
-      // 하단 카드와 정확히 동일한 시간(POPUP_DURATION) 뒤에 동시 소멸
-      popupTimer = setTimeout(() => {
-        popup.classList.remove('opacity-100', 'scale-100');
-        popup.classList.add('opacity-0', 'pointer-events-none', 'scale-90');
-      }, POPUP_DURATION);
     }
 
-    function updateFlashPopupDuration(duration) {
-      if (!duration) return;
-      const durationEl = document.getElementById('popup-duration');
-      if (durationEl) {
-        durationEl.innerText = `소요: ${duration}`;
-        durationEl.classList.remove('hidden');
+    function hideFlashPopup() {
+      const popup = document.getElementById('flash-popup');
+      if (popup) {
+        popup.classList.remove('opacity-100', 'scale-100');
+        popup.classList.add('opacity-0', 'pointer-events-none', 'scale-90');
       }
     }
 
